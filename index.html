@@ -1,0 +1,2727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InConversation Drawing Tool</title>
+  <script>
+    // Hide welcome text immediately if coming from reset - inline style before page loads
+    if (sessionStorage.getItem('skipWelcome') === 'true') {
+      document.write('<style>#welcomeText { opacity: 0 !important; visibility: hidden !important; }</style>');
+    }
+  </script>
+  <script src="p5.min.js"></script>
+  <script src="jszip.min.js"></script>
+  <script src="gif.js"></script>
+  <style>
+        @font-face {
+      font-family: 'IBM Plex Mono';
+      src: url('fonts/IBMPlexMono-Regular.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    
+    @font-face {
+      font-family: 'Bumptious';
+      src: url('fonts/Bumptious-Regular.otf') format('opentype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    
+    @font-face {
+      font-family: 'RailRoad Revival';
+      src: url('fonts/RailRoadRevival-Regular.otf') format('opentype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    
+    @font-face {
+      font-family: 'Tele-Text';
+      src: url('fonts/Tele-Text.otf') format('opentype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    
+    @font-face {
+      font-family: 'Varyetas-F';
+      src: url('fonts/Varyetas-F-Trial.otf') format('opentype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    
+    @font-face {
+      font-family: 'Koburg';
+      src: url('fonts/Koburg_Trial-normal.otf') format('opentype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    /* Global UI cursor - replaces default arrow everywhere */
+    * {
+      cursor: url('cursors/UI-Cursor.png') 8 2, auto !important;
+    }
+
+    body {
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+      overflow: hidden;
+      background: #000;
+      display: flex;
+      height: 100vh;
+    }
+
+    #canvasContainer {
+      flex: 1;
+      position: relative;
+    }
+    
+    /* Hidden cursor before first space press */
+    #canvasContainer.cursor-hidden,
+    #canvasContainer.cursor-hidden *,
+    #canvasContainer.cursor-hidden *:hover,
+    #canvasContainer.cursor-hidden *:active {
+      cursor: none !important;
+    }
+    
+    /* Paused mode - show rotation cursor */
+    #canvasContainer.cursor-paused,
+    #canvasContainer.cursor-paused *,
+    #canvasContainer.cursor-paused *:hover,
+    #canvasContainer.cursor-paused *:active {
+      cursor: url('cursors/Rotations-Cursor.png') 16 16, default !important;
+    }
+    
+    /* Custom Cursors - Pixel Art Style - Override global with higher specificity */
+    #canvasContainer.cursor-draw,
+    #canvasContainer.cursor-draw *,
+    #canvasContainer.cursor-draw *:hover,
+    #canvasContainer.cursor-draw *:active {
+      cursor: url('cursors/Zeichen-Cursor.png') 2 2, crosshair !important;
+    }
+    
+    /* Hide cursor only when drawing with arrow keys */
+    #canvasContainer.cursor-draw.arrow-drawing,
+    #canvasContainer.cursor-draw.arrow-drawing *,
+    #canvasContainer.cursor-draw.arrow-drawing *:hover,
+    #canvasContainer.cursor-draw.arrow-drawing *:active {
+      cursor: none !important;
+    }
+    
+    #canvasContainer.cursor-rotate,
+    #canvasContainer.cursor-rotate *,
+    #canvasContainer.cursor-rotate *:hover,
+    #canvasContainer.cursor-rotate *:active {
+      cursor: url('cursors/Rotations-Cursor.png') 16 16, default !important;
+    }
+    
+    #canvasContainer.cursor-pan,
+    #canvasContainer.cursor-pan *,
+    #canvasContainer.cursor-pan *:hover,
+    #canvasContainer.cursor-pan *:active {
+      cursor: url('cursors/UI-Cursor.png') 8 2, move !important;
+    }
+    
+    /* Exclude panel from global cursor and canvas cursor rules */
+    #cubeConfigPanel,
+    #cubeConfigPanel *,
+    #cubeConfigPanel *:hover,
+    #cubeConfigPanel *:active {
+      cursor: url('cursors/UI-Cursor.png') 8 2, auto !important;
+    }
+
+    #cubeConfigPanel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 350px;
+      height: 100vh;
+      background: rgba(30, 30, 30, 0.95);
+      padding: 15px;
+      overflow-y: auto;
+      color: #fff;
+      box-shadow: -2px 0 10px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+      font-size: 12px;
+      z-index: 50;
+    }
+    
+    #cubeConfigPanel button {
+      position: relative;
+      z-index: 100;
+      pointer-events: auto !important;
+    }
+    
+    #cubeConfigPanel input,
+    #cubeConfigPanel select {
+      position: relative;
+      z-index: 100;
+      pointer-events: auto !important;
+    }
+
+    #cubeConfigPanel h2 {
+      font-size: 16px;
+      margin-bottom: 12px;
+      color: #fff;
+      border-bottom: 2px solid #444;
+      padding-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+      transition: color 0.2s;
+    }
+    
+    #cubeConfigPanel h2:hover {
+      color: #8B7E74;
+    }
+    
+    #cubeConfigPanel h2::after {
+      content: '▼';
+      font-size: 12px;
+      transition: transform 0.2s;
+    }
+    
+    #cubeConfigPanel h2.collapsed::after {
+      transform: rotate(-90deg);
+    }
+
+    /* Vertical zoom slider styling */
+    #onCanvasZoomSlider {
+      -webkit-appearance: none;
+      writing-mode: vertical-lr;
+      direction: rtl;
+      appearance: none;
+      width: 20px;
+      height: 120px;
+      background: #444;
+      border-radius: 10px;
+      outline: none;
+      cursor: url('cursors/UI-Cursor.png') 8 2, pointer;
+      pointer-events: auto;
+      position: relative;
+      z-index: 1000;
+    }
+
+    #onCanvasZoomSlider:active {
+      cursor: url('cursors/UI-Cursor.png') 8 2, grabbing;
+    }
+
+    #onCanvasZoomSlider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      background: #8B7E74;
+      border-radius: 50%;
+      cursor: url('cursors/UI-Cursor.png') 8 2, pointer;
+      pointer-events: auto;
+    }
+
+    #onCanvasZoomSlider:active::-webkit-slider-thumb {
+      background: #9B8E84;
+      cursor: url('cursors/UI-Cursor.png') 8 2, grabbing;
+    }
+
+    #onCanvasZoomSlider::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      background: #8B7E74;
+      border-radius: 50%;
+      border: none;
+    }
+
+    #cubeConfigPanel label {
+      display: block;
+      margin-top: 12px;
+      margin-bottom: 4px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #999;
+    }
+
+    #cubeConfigPanel input[type="text"],
+    #cubeConfigPanel input[type="number"] {
+      width: 100%;
+      padding: 6px;
+      background: #1a1a1a;
+      color: #fff;
+      border: 1px solid #444;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      font-size: 12px;
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+    }
+
+    #cubeConfigPanel select {
+      width: 100%;
+      padding: 6px;
+      background: #1a1a1a;
+      color: #fff;
+      border: 1px solid #444;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      font-size: 12px;
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+    }
+    
+    /* Force cursor on select dropdown options */
+    #cubeConfigPanel select option {
+      cursor: url('cursors/UI-Cursor.png') 8 2, auto !important;
+    }
+
+    #cubeConfigPanel button {
+      width: 100%;
+      padding: 8px;
+      margin-top: 8px;
+      background: #444;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+      transition: background 0.2s;
+    }
+
+    #cubeConfigPanel button:hover {
+      background: #8B7E74;
+    }
+
+    #cubeConfigPanel button:active {
+      background: #1a1a1a;
+    }
+
+    #combineButton {
+      background: #8B7E74 !important;
+      font-weight: bold;
+      font-size: 13px !important;
+      padding: 12px !important;
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+    }
+
+    #combineButton:hover {
+      background: #1a1a1a !important;
+      opacity: 0.8;
+    }
+
+    .section {
+      margin-bottom: 18px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #444;
+    }
+
+    .section:last-child {
+      border-bottom: none;
+    }
+
+    .face-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 5px;
+      margin-top: 10px;
+    }
+
+    .face-button {
+      padding: 15px 10px;
+      background: #1a1a1a;
+      border: 2px solid #444;
+      color: #fff;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+      text-align: center;
+      transition: all 0.2s;
+    }
+
+    .face-button:hover {
+      background: #444;
+      border-color: #8B7E74;
+    }
+
+    .face-button.selected {
+      background: #8B7E74;
+      border-color: #8B7E74;
+    }
+
+    #cubeNetPreview {
+      width: 100%;
+      height: 280px;
+      background: #1a1a1a;
+      border: 1px solid #444;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+
+    .value-display {
+      display: block;
+      float: right;
+      color: #999;
+      font-weight: bold;
+    }
+
+    /* Rotary Knob Styles */
+    .knob-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .knob-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .knob-wrapper {
+      position: relative;
+      width: 45px;
+      height: 45px;
+      flex-shrink: 0;
+    }
+
+    .knob {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: #1a1a1a;
+      border: 2px solid #444;
+      position: relative;
+      transition: border-color 0.2s;
+    }
+
+    .knob:hover {
+      border-color: #8B7E74;
+    }
+
+    .knob-indicator {
+      position: absolute;
+      top: 3px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 12px;
+      background: #fff;
+    }
+
+    .knob-track {
+      display: none;
+    }
+
+    .knob-label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      text-align: center;
+    }
+
+    .knob-title {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      color: #999;
+      line-height: 1.1;
+    }
+
+    .knob-value {
+      font-size: 11px;
+      font-weight: bold;
+      color: #999;
+    }
+
+    /* Hide original range inputs when using knobs */
+    #cubeConfigPanel input[type="range"] {
+      display: none;
+    }
+    
+    /* Show specific sliders that should be visible */
+    #outline3DLetterSizeSlider,
+    #letterSizeSlider,
+    #visibleFacesSlider {
+      display: block !important;
+      width: 100%;
+      margin: 10px 0;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      background: #444;
+      border-radius: 2px;
+      outline: none;
+    }
+
+    /* Slider thumb styling */
+    #outline3DLetterSizeSlider::-webkit-slider-thumb,
+    #letterSizeSlider::-webkit-slider-thumb,
+    #visibleFacesSlider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #8B7E74;
+      border-radius: 50%;
+      cursor: url('cursors/UI-Cursor.png') 8 2, pointer;
+    }
+
+    #outline3DLetterSizeSlider::-moz-range-thumb,
+    #letterSizeSlider::-moz-range-thumb,
+    #visibleFacesSlider::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      background: #8B7E74;
+      border-radius: 50%;
+      cursor: url('cursors/UI-Cursor.png') 8 2, pointer;
+      border: none;
+    }
+
+    /* Checkbox styling */
+    input[type="checkbox"] {
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #444;
+      border-radius: 3px;
+      background: #1a1a1a;
+      cursor: url('cursors/UI-Cursor.png') 8 2, pointer;
+      position: relative;
+      vertical-align: middle;
+    }
+
+    input[type="checkbox"]:checked {
+      background: #8B7E74;
+      border-color: #8B7E74;
+    }
+
+    input[type="checkbox"]:checked::after {
+      content: '×';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      font-size: 16px;
+      font-weight: bold;
+      line-height: 1;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    #instructions {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(30, 30, 30, 0.9);
+      color: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      font-size: 12px;
+      max-width: 300px;
+      z-index: 10;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+
+    #instructions h3 {
+      margin-top: 0;
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #8B7E74;
+    }
+
+    #instructions ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    #instructions li {
+      margin: 5px 0;
+      padding-left: 15px;
+      position: relative;
+    }
+
+    #instructions li:before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: #8B7E74;
+    }
+
+    #previewWindow {
+      position: fixed;
+      bottom: 20px;
+      right: 370px;
+      width: 200px;
+      height: 240px;
+      background: rgba(30, 30, 30, 0.95);
+      border: 2px solid #444;
+      border-radius: 8px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.7);
+      z-index: 10;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.3s ease;
+    }
+    
+    #previewWindow.minimized {
+      width: 60px;
+      height: 30px;
+      border-radius: 15px;
+    }
+    
+    #previewWindow.minimized iframe,
+    #previewWindow.minimized #previewStyles {
+      display: none;
+    }
+    
+    #previewToggle {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #999;
+      font-size: 14px;
+      transition: color 0.2s;
+      z-index: 11;
+    }
+    
+    #previewToggle:hover {
+      color: #fff;
+    }
+    
+    #previewWindow.minimized #previewToggle {
+      top: 50%;
+      right: 50%;
+      transform: translate(50%, -50%);
+    }
+
+    #previewWindow iframe {
+      width: 100%;
+      height: 200px;
+      border: none;
+      display: block;
+    }
+    
+    #previewStyles {
+      display: flex;
+      gap: 6px;
+      padding: 8px;
+      justify-content: flex-start;
+      background: rgba(20, 20, 20, 0.9);
+    }
+    
+    .style-button {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid #444;
+      transition: all 0.2s;
+    }
+    
+    .style-button:hover {
+      transform: scale(1.15);
+      border-color: #fff;
+    }
+    
+    .style-button.active {
+      border-width: 3px;
+    }
+    
+    #styleWhite {
+      background: #000;
+    }
+    
+    #styleWhite.active {
+      border-color: #fff;
+      box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+    }
+    
+    #styleBlack {
+      background: #fff;
+    }
+    
+    #styleBlack.active {
+      border-color: #000;
+      box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+    }
+    
+    #stylePink {
+      background: rgb(255, 0, 255);
+    }
+    
+    #stylePink.active {
+      border-color: #fff;
+      box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+    }
+    
+    #welcomeText {
+      display: none !important;
+    }
+    
+    #historyButtons {
+      position: fixed;
+      top: 20px;
+      right: 390px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 10;
+    }
+    
+    #historyButtons .history-row {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    
+    .history-btn {
+      width: 50px;
+      height: 30px;
+      background: rgba(30, 30, 30, 0.9);
+      border: 2px solid #444;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 18px;
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      line-height: 1;
+      padding: 0;
+    }
+    
+    .history-btn:hover {
+      background: rgba(50, 50, 50, 0.95);
+      border-color: #8B7E74;
+      transform: scale(1.05);
+    }
+    
+    .history-btn:active {
+      transform: scale(0.95);
+    }
+    
+    .history-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+    
+    .history-btn:disabled:hover {
+      background: rgba(30, 30, 30, 0.9);
+      border-color: #444;
+      transform: scale(1);
+    }
+    
+    /* Pause/Play button with cursor image */
+    #pausePlayBtn {
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    #pausePlayBtn::before {
+      content: '';
+      display: block;
+      width: 24px;
+      height: 24px;
+      background-image: url('cursors/Rotations-Cursor.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+      transition: background-image 0.2s;
+    }
+    
+    /* When paused (drawing mode active), show pen cursor */
+    #pausePlayBtn.paused::before {
+      background-image: url('cursors/Zeichen-Cursor.png');
+    }
+    
+    /* Angle Preset and Slot Buttons */
+    .angle-preset, .angle-slot {
+      padding: 8px;
+      background: #1a1a1a;
+      color: #999;
+      border: 1px solid #444;
+      border-radius: 4px;
+      cursor: url('cursors/UI-Cursor.png') 8 2, pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+    
+    .angle-preset:hover, .angle-slot:hover {
+      background: #444;
+      border-color: #8B7E74;
+    }
+    
+    .angle-slot.saved {
+      background: #8B7E74;
+      color: #fff;
+      border-color: #8B7E74;
+      font-weight: bold;
+    }
+    
+    .angle-slot.selected {
+      box-shadow: 0 0 0 2px #8B7E74;
+    }
+    
+    /* Grid Toggle Button */
+    #gridToggleBtn {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      width: 44px;
+      height: 44px;
+      background: rgba(30, 30, 30, 0.9);
+      border: 2px solid #444;
+      border-radius: 6px;
+      z-index: 1000;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    
+    #gridToggleBtn:hover {
+      background: rgba(50, 50, 50, 0.95);
+      border-color: #8B7E74;
+    }
+    
+    #gridToggleBtn.active {
+      background: rgba(212, 134, 156, 0.2);
+      border-color: #8B7E74;
+    }
+    
+    #gridToggleBtn .grid-icon {
+      width: 24px;
+      height: 24px;
+      background-image: 
+        repeating-linear-gradient(0deg, transparent, transparent 5px, #999 5px, #999 6px),
+        repeating-linear-gradient(90deg, transparent, transparent 5px, #999 5px, #999 6px);
+      transition: all 0.2s;
+    }
+    
+    #gridToggleBtn.active .grid-icon {
+      background-image: 
+        repeating-linear-gradient(0deg, transparent, transparent 5px, #fff 5px, #fff 6px),
+        repeating-linear-gradient(90deg, transparent, transparent 5px, #fff 5px, #fff 6px);
+    }
+    
+    /* Disabled brush options styling */
+    select option:disabled {
+      opacity: 0.4;
+      color: #999;
+    }
+    
+    /* Grid Size Control Panel */
+    #gridSizeControl {
+      position: fixed;
+      top: 74px;
+      left: 20px;
+      width: 44px;
+      padding: 12px 10px;
+      background: rgba(30, 30, 30, 0.9);
+      border: 2px solid #444;
+      border-radius: 6px;
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    #gridSizeControl.visible {
+      display: flex;
+    }
+    
+    #gridSizeControl label {
+      color: #999;
+      font-size: 10px;
+      text-align: center;
+      margin: 0;
+      line-height: 1.2;
+    }
+    
+    #gridSizeControlSlider {
+      width: 80px;
+      transform: rotate(-90deg);
+      transform-origin: center;
+      margin: 30px 0;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      background: #444;
+      border-radius: 2px;
+      outline: none;
+      cursor: url('cursors/UI-Cursor.png') 8 2, pointer;
+    }
+
+    #gridSizeControlSlider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #8B7E74;
+      cursor: url('cursors/UI-Cursor.png') 8 2, pointer;
+      border-radius: 50%;
+    }
+
+    #gridSizeControlSlider::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      background: #8B7E74;
+      cursor: url('cursors/UI-Cursor.png') 8 2, pointer;
+      border-radius: 50%;
+      border: none;
+    }
+    
+    #gridSizeValue {
+      color: #fff;
+      font-size: 12px;
+      font-weight: bold;
+      text-align: center;
+    }
+    
+    /* Clippelie Window */
+    #clippelieWindow {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      width: 135px;
+      height: 145px;
+      background: rgba(30, 30, 30, 0.95);
+      border: 2px solid #444;
+      border-radius: 6px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.7);
+      z-index: 15;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+      font-size: 8px;
+      line-height: 1.1;
+      color: #8B7E74;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.4s ease;
+    }
+    
+    /* Clippelie centered intro mode */
+    #clippelieWindow.intro {
+      top: 50%;
+      left: calc((100vw - 350px) / 2 - 150px);
+      transform: translateY(-50%);
+      bottom: auto;
+      width: 180px;
+      height: 200px;
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+      font-size: 11px;
+      padding: 18px;
+      animation: floatClippelie 4s ease-in-out infinite;
+      z-index: 10000;
+      will-change: transform;
+    }
+    
+    @keyframes floatClippelie {
+      0%, 100% {
+        transform: translateY(-50%) translateY(0px);
+      }
+      50% {
+        transform: translateY(-50%) translateY(-10px);
+      }
+    }
+    
+    #clippelieWindow.intro #clippelieToggle {
+      display: none;
+    }
+    
+    #clippelieWindow.intro #clippelieAscii {
+      color: #fff;
+    }
+    
+    @keyframes float {
+      0%, 100% {
+        transform: translate(-50%, -50%) translateY(0px);
+      }
+      50% {
+        transform: translate(-50%, -50%) translateY(-10px);
+      }
+    }
+    
+    #clippelieWindow.minimized {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+    }
+    
+    #clippelieWindow.minimized #clippelieAscii {
+      display: none;
+    }
+    
+    #clippelieToggle {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 16px;
+      height: 16px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid #444;
+      border-radius: 3px;
+      color: #8B7E74;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 1;
+      transition: all 0.2s;
+    }
+    
+    #clippelieToggle:hover {
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+    }
+    
+    #clippelieWindow.minimized #clippelieToggle {
+      position: static;
+      width: 100%;
+      height: 100%;
+      border-radius: 6px;
+      font-size: 16px;
+    }
+    
+    /* Notification badge for minimized Clippelie */
+    #clippelieNotification {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 20px;
+      height: 20px;
+      background: rgb(255, 0, 255);
+      border: 2px solid #1e1e1e;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 14px;
+      font-weight: bold;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+    
+    #clippelieWindow.minimized #clippelieNotification.has-notification {
+      display: flex;
+    }
+    
+    #clippelieAscii {
+      white-space: pre;
+      transition: opacity 0.1s;
+    }
+    
+    /* Tip Window - Speech Bubble from Clippelie */
+    #tipWindow {
+      position: fixed;
+      top: auto;
+      bottom: auto;
+      top: calc(100vh - 155px);
+      left: 175px;
+      width: 350px;
+      min-height: 80px;
+      background: rgba(30, 30, 30, 0.95);
+      border: 2px solid #444;
+      border-radius: 6px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.7);
+      z-index: 15;
+      padding: 16px 40px 16px 16px;
+      display: none;
+      animation: tipSlideIn 0.4s ease-out;
+      position: relative;
+      transition: all 0.4s ease;
+    }
+    
+    /* Tip window in intro mode - positioned next to centered Clippelie */
+    #tipWindow.intro {
+      top: 50%;
+      left: calc((100vw - 350px) / 2 + 50px);
+      transform: translateY(-50%);
+      bottom: auto;
+      width: 240px;
+      min-height: 60px;
+      max-height: 120px;
+      height: auto;
+      animation: floatTip 4s ease-in-out infinite;
+      will-change: transform;
+    }
+    
+    @keyframes floatTip {
+      0%, 100% {
+        transform: translateY(-50%) translateY(0px);
+      }
+      50% {
+        transform: translateY(-50%) translateY(-10px);
+      }
+    }
+    
+    #tipWindow.intro::before,
+    #tipWindow.intro::after {
+      display: block !important;
+    }
+    
+    #tipWindow.intro::before {
+      content: '';
+      position: absolute;
+      left: -16px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-top: 12px solid transparent;
+      border-bottom: 12px solid transparent;
+      border-right: 16px solid #444;
+      bottom: auto;
+    }
+    
+    #tipWindow.intro::after {
+      content: '';
+      position: absolute;
+      left: -13px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-top: 10px solid transparent;
+      border-bottom: 10px solid transparent;
+      border-right: 14px solid rgba(30, 30, 30, 0.95);
+      bottom: auto;
+    }
+    
+    #tipWindow::before {
+      content: '';
+      position: absolute;
+      left: -16px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-top: 12px solid transparent;
+      border-bottom: 12px solid transparent;
+      border-right: 16px solid #444;
+    }
+    
+    #tipWindow::after {
+      content: '';
+      position: absolute;
+      left: -13px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-top: 10px solid transparent;
+      border-bottom: 10px solid transparent;
+      border-right: 14px solid rgba(30, 30, 30, 0.95);
+    }
+    
+    #tipWindow.visible {
+      display: block;
+    }
+    
+    @keyframes tipSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    
+    #tipWindow .tip-close {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 24px;
+      height: 24px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid #444;
+      border-radius: 3px;
+      color: #8B7E74;
+      font-size: 18px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      line-height: 1;
+      padding: 0;
+    }
+    
+    #tipWindow.intro .tip-close {
+      display: none !important;
+    }
+    
+    #tipWindow .tip-close:hover {
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+    }
+    
+    #tipWindow .tip-content {
+      color: #fff;
+      font-size: 13px;
+      line-height: 1.8;
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+      text-align: center;
+    }
+    
+    #tipWindow .tip-content strong {
+      color: #fff;
+      font-weight: bold;
+    }
+    
+    #tipWindow .tip-icon-container {
+      display: none;
+      margin-top: 12px;
+      justify-content: center;
+    }
+    
+    #tipWindow .tip-cube-net-container {
+      display: none;
+      margin-top: 12px;
+      justify-content: center;
+    }
+    
+    #tipWindow .tip-grid-icon {
+      width: 44px;
+      height: 44px;
+      background: rgba(30, 30, 30, 0.9);
+      border: 2px solid #444;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+    }
+    
+    #tipWindow .tip-grid-icon .grid-icon {
+      width: 24px;
+      height: 24px;
+      background-image: 
+        repeating-linear-gradient(0deg, transparent, transparent 5px, #8B7E74 5px, #8B7E74 6px),
+        repeating-linear-gradient(90deg, transparent, transparent 5px, #8B7E74 5px, #8B7E74 6px);
+    }
+    
+    /* Würfelnetz Icon (unfolded cube) */
+    #tipWindow .tip-cube-net-icon {
+      width: 44px;
+      height: 44px;
+      background: rgba(30, 30, 30, 0.9);
+      border: 2px solid #444;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+    }
+    
+    #tipWindow .cube-net-icon {
+      width: 28px;
+      height: 21px;
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(4, 6px);
+      grid-template-rows: repeat(3, 6px);
+      gap: 1px;
+    }
+    
+    #tipWindow .cube-net-icon .face {
+      background: #8B7E74;
+      border: 1px solid #444;
+    }
+    
+    #tipWindow .cube-net-icon .face:nth-child(1) { grid-column: 2; grid-row: 1; }
+    #tipWindow .cube-net-icon .face:nth-child(2) { grid-column: 1; grid-row: 2; }
+    #tipWindow .cube-net-icon .face:nth-child(3) { grid-column: 2; grid-row: 2; }
+    #tipWindow .cube-net-icon .face:nth-child(4) { grid-column: 3; grid-row: 2; }
+    #tipWindow .cube-net-icon .face:nth-child(5) { grid-column: 4; grid-row: 2; }
+    #tipWindow .cube-net-icon .face:nth-child(6) { grid-column: 2; grid-row: 3; }
+  </style>
+</head>
+<body>
+  <div id="canvasContainer"></div>
+  
+  <!-- Grid Toggle Button -->
+  <button id="gridToggleBtn" title="Toggle Grid">
+    <div class="grid-icon"></div>
+  </button>
+  
+  <!-- Grid Size Control Panel -->
+  <div id="gridSizeControl">
+    <label>Grid<br>Size</label>
+    <input type="range" id="gridSizeControlSlider" min="2" max="200" value="20" step="1">
+    <div id="gridSizeValue">20</div>
+  </div>
+
+  <div id="welcomeText" class="show">Press Space and start drawing</div>
+  
+  <div id="historyButtons">
+    <div class="history-row">
+      <button class="history-btn" id="undoBtn" title="Undo (Rückgängig)" style="width: 60px; font-size: 11px;">Undo</button>
+      <button class="history-btn" id="redoBtn" title="Redo (Wiederherstellen)" style="width: 60px; font-size: 11px;">Redo</button>
+    </div>
+    <div class="history-row">
+      <button class="history-btn" id="resetBtn" title="Reset Everything" style="width: 60px; font-size: 11px;">Reset</button>
+      <button class="history-btn" id="pausePlayBtn" title="Pause/Play Animation" style="width: 40px;"></button>
+    </div>
+    <div class="history-row" style="margin-top: 10px; justify-content: flex-end;">
+      <div id="zoomSliderContainer" style="display: flex; flex-direction: column; align-items: center; width: 40px; pointer-events: auto; position: relative; z-index: 1000;">
+        <div style="color: #fff; font-size: 16px; margin-bottom: 5px; pointer-events: none;">+</div>
+        <input type="range" id="onCanvasZoomSlider" min="0.2" max="5" value="1" step="0.1" 
+               style="writing-mode: vertical-lr; direction: rtl; width: 20px; height: 120px; background: #444; cursor: pointer;">
+        <div style="color: #fff; font-size: 16px; margin-top: 5px; pointer-events: none;">−</div>
+        <div id="zoomDisplay" style="color: #999; font-size: 10px; margin-top: 5px; pointer-events: none;">1.0x</div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Clippelie Window -->
+  <div id="clippelieWindow" class="intro">
+    <div id="clippelieToggle">▼</div>
+    <div id="clippelieNotification">!</div>
+    <div id="clippelieAscii"></div>
+  </div>
+  
+  <!-- Tip Window -->
+  <div id="tipWindow" class="intro visible" style="display: block !important; position: fixed !important; z-index: 10001 !important;">
+    <button class="tip-close" id="tipClose">×</button>
+    <div class="tip-content" id="tipContent">
+      Tap <strong>Space</strong> and start<br>&nbsp;&nbsp;drawing your letters!
+    </div>
+    <div class="tip-icon-container" style="display: none;">
+      <div class="tip-grid-icon">
+        <div class="grid-icon"></div>
+      </div>
+    </div>
+    <div class="tip-cube-net-container" style="display: none;">
+      <div class="tip-cube-net-icon">
+        <div class="cube-net-icon">
+          <div class="face"></div>
+          <div class="face"></div>
+          <div class="face"></div>
+          <div class="face"></div>
+          <div class="face"></div>
+          <div class="face"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div id="previewWindow" class="minimized">
+    <div id="previewToggle">▲</div>
+    <iframe src="preview.html" id="previewFrame"></iframe>
+    <div id="previewStyles">
+      <div class="style-button" id="styleWhite" title="White/Black"></div>
+      <div class="style-button" id="styleBlack" title="Black/White"></div>
+      <div class="style-button active" id="stylePink" title="Tech Pink"></div>
+    </div>
+  </div>
+  
+  <div id="cubeConfigPanel">
+    <h2 id="brushHeader" class="collapsed">Brush Settings</h2>
+    
+    <div class="section" id="brushSection" style="display: none;">
+      <label>Drawing Method</label>
+      <select id="drawingMethod">
+        <option value="freehand">Freehand Drawing</option>
+        <option value="arrow">Arrow Keys Drawing</option>
+      </select>
+      
+      <!-- Arrow Keys Shortcuts Info -->
+      <div id="arrowKeysInfo" style="display: none; background: #1a1a1a; border: 1px solid #444; border-radius: 4px; padding: 12px; margin: 10px 0; font-size: 13px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <strong style="color: #fff; font-size: 14px;">Keyboard Shortcuts</strong>
+          <button id="closeArrowInfo" style="background: #444; border: 1px solid #444; color: #999; cursor: pointer; font-size: 14px; padding: 2px 8px; border-radius: 3px; font-weight: bold;">×</button>
+        </div>
+        <div style="color: #999; line-height: 1.8;">
+          <div style="margin-bottom: 4px;"><span style="background: #444; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px;">Arrow Keys</span> <span style="color: #999;">→</span> Draw in direction</div>
+          <div style="margin-bottom: 4px;"><span style="background: #444; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px;">W</span> <span style="color: #999;">→</span> Move forward in Z</div>
+          <div><span style="background: #444; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px;">Q</span> <span style="color: #999;">→</span> Move backward in Z</div>
+        </div>
+      </div>
+      
+      <label>Brush Type</label>
+      <select id="brushType">
+        <option value="pixel">Pixel</option>
+        <option value="smooth">Smooth</option>
+        <option value="outline2">Outline</option>
+        <option value="surface">Surface</option>
+      </select>
+      
+      <div id="brushKnobsContainer">
+        <input type="range" id="pixelSizeSlider" min="1" max="100" value="8" step="1">
+        <input type="range" id="waveSlider" min="0" max="60" value="15" step="1">
+      </div>
+      
+      <label>Depth</label>
+      <select id="zModeSelect">
+        <option value="speed">Speed-based</option>
+        <option value="wave">Wave (sin)</option>
+        <option value="linear">Linear Forward</option>
+        <option value="linear-back">Linear Backward</option>
+        <option value="static">Static (z=0)</option>
+      </select>
+      
+      <label style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="shadingCheck" style="margin: 0;">
+        <span style="flex: 1;">Enable Shading (Light/Shadow)</span>
+      </label>
+      
+      <label style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="waveAnimationCheck" checked style="margin: 0;">
+        <span style="flex: 1;">Enable Wave Animation</span>
+      </label>
+    </div>
+
+    <h2 id="effectsHeader" class="collapsed">Effects</h2>
+
+    <div class="section" id="effectsSection" style="display: none;">
+      <label>Effect Type</label>
+      <select id="brushEffect">
+        <option value="none">None</option>
+        <option value="outlines">Outlines</option>
+        <option value="growth">Differential Growth</option>
+        <option value="weingart">Weingart Cubes</option>
+      </select>
+      
+      <!-- Outlines Controls -->
+      <div id="outlinesControls" style="display: none;">
+        <div id="outlineKnobsContainer" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px;">
+          <div>
+            <input type="range" id="outlineLevelsSlider" min="0" max="50" value="0" step="1" style="display: none;">
+          </div>
+          <div>
+            <input type="range" id="outlineSpacingSlider" min="2" max="50" value="8" step="1" style="display: none;">
+          </div>
+        </div>
+      </div>
+      
+      <!-- Growth Controls -->
+      <div id="growthControls" style="display: none;">
+        <label>Growth Power</label>
+        <input type="range" id="growthIntensitySlider" min="1" max="50" value="10" step="1">
+      </div>
+      
+      <!-- Weingart Cubes Controls (was Cube Configuration) -->
+      <div id="weingartControls" style="display: none;">
+        <div style="margin-bottom: 10px;">
+          <label>Cube Text</label>
+          <input type="text" id="cubeText" value="A" maxlength="6" 
+                 style="width: 100%; padding: 4px; background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 3px;">
+        </div>
+        
+        <div style="margin-bottom: 10px;">
+          <label>Font</label>
+          <select id="cubeFontSelect" style="width: 100%; padding: 4px; background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 3px;">
+            <option value="Arial">Arial</option>
+            <option value="Helvetica">Helvetica</option>
+            <option value="Times New Roman">Times New Roman</option>
+            <option value="Courier New">Courier New</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Verdana">Verdana</option>
+            <option value="__UPLOAD__" style="color: #ffa500; font-weight: bold;">+ Upload Custom Font...</option>
+          </select>
+          <input type="file" id="cubeFontUpload" accept=".ttf,.otf,.woff,.woff2" style="display: none;">
+          <div id="cubeFontStatus" style="font-size: 11px; color: #888; margin-top: 4px;"></div>
+        </div>
+        
+        <div id="weingartKnobsContainer" style="display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 15px;">
+          <div>
+            <input type="range" id="cubeLetterSize" min="10" max="60" value="40" step="1" style="display: none;">
+          </div>
+        </div>
+        
+        <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+          <input type="checkbox" id="animateCubeCheck" style="margin: 0;">
+          <span>Animate Rotation</span>
+        </label>
+        
+        <canvas id="cubePreviewCanvas" width="640" height="640" style="border: 1px solid #444; background: #1a1a1a; cursor: crosshair; display: block; margin: 0; width: calc(100% - 2px); max-width: 320px; height: auto; aspect-ratio: 1; image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;"></canvas>
+        
+        <div style="margin-top: 10px;">
+          <button id="activateWeingartBtn" style="padding: 8px 12px; background: #8B7E74; color: white; border: none; border-radius: 3px; cursor: pointer; width: 100%; font-weight: bold;">
+            Activate Weingart Cubes
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Letter Generator Section -->
+    <h2 id="letterHeader" class="collapsed">Letter Generator</h2>
+    <div class="section" id="letterSection" style="display: none;">
+      <div style="margin-bottom: 10px;">
+        <label>Text (up to 8 characters)</label>
+        <input type="text" id="letterText" value="A" maxlength="8" 
+               style="width: 100%; padding: 4px; background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 3px;">
+      </div>
+      
+      <div style="margin-bottom: 10px;">
+        <label>Font</label>
+        <select id="letterFont" style="width: 100%; padding: 4px; background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 3px;">
+          <option value="'Bumptious', sans-serif">Bumptious</option>
+          <option value="'RailRoad Revival', sans-serif">RailRoad Revival</option>
+          <option value="'Tele-Text', monospace">Tele-Text</option>
+          <option value="'Varyetas-F', serif">Varyetas-F</option>
+          <option value="'Koburg', serif">Koburg</option>
+          <option value="__UPLOAD__" style="color: #ffa500; font-weight: bold;">+ Upload Custom Font...</option>
+        </select>
+        <input type="file" id="customFontUpload" accept=".ttf,.otf,.woff,.woff2" style="display: none;">
+        <div id="customFontStatus" style="font-size: 11px; color: #888; margin-top: 4px;"></div>
+      </div>
+      
+      <div style="margin-bottom: 10px;">
+        <input type="range" id="letterSize" min="20" max="600" value="400" step="10">
+        <span id="letterSizeValue" style="display: none;">100</span>
+      </div>
+      
+      <button id="generateLetterBtn" style="padding: 8px 12px; background: #8B7E74; color: white; border: none; border-radius: 3px; cursor: pointer; width: 100%; font-size: 14px; position: relative; z-index: 100; pointer-events: auto;">
+        Generate Text Outline
+      </button>
+    </div>
+
+    <h2 id="exportHeader" class="collapsed">Export</h2>
+    
+    <div class="section" id="exportSection" style="display: none;">
+      <label>View Presets</label>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 15px;">
+        <button class="angle-preset" data-rotx="0" data-roty="0">Front</button>
+        <button class="angle-preset" data-rotx="-90" data-roty="0">Top</button>
+        <button class="angle-preset" data-rotx="0" data-roty="90">Side</button>
+        <button class="angle-preset" data-rotx="-35.264" data-roty="45">Iso</button>
+      </div>
+      
+      <label>Export Format</label>
+      <select id="exportFormat" style="width: 100%; margin-bottom: 10px;">
+        <option value="png">PNG</option>
+        <option value="png-rotation">PNG Sequence</option>
+        <option value="mp4">MP4</option>
+        <option value="svg">SVG</option>
+      </select>
+      
+      <!-- Video Settings (shown for video only) -->
+      <div id="videoSettings" style="display: none; background: #1a1a1a; padding: 10px; border-radius: 4px; margin-bottom: 10px;">
+        <label style="font-size: 12px;">Number of Frames</label>
+        <input type="number" id="videoFrames" min="30" max="240" value="60" step="1" style="width: 100%; margin-bottom: 8px;">
+        <label style="font-size: 12px;">Camera Mode</label>
+        <select id="videoRotationMode" style="width: 100%; margin-bottom: 8px;">
+          <option value="static">Static (Animation Only)</option>
+          <option value="rotate">360° Rotation</option>
+        </select>
+        <div id="videoRotationAxis" style="display: none;">
+          <label style="font-size: 12px;">Rotation Axis</label>
+          <select id="rotationAxis" style="width: 100%;">
+            <option value="y">Y-Axis (Turntable)</option>
+            <option value="x">X-Axis (Flip)</option>
+            <option value="both">Both (Orbital)</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- Rotation Export Settings (shown for png-rotation) -->
+      <div id="rotationSettings" style="display: none; background: #1a1a1a; padding: 10px; border-radius: 4px; margin-bottom: 10px;">
+        <label style="font-size: 12px;">Number of Frames</label>
+        <input type="number" id="rotationFrames" min="4" max="120" value="36" step="1" style="width: 100%; margin-bottom: 8px;">
+        <label style="font-size: 12px;">Rotation Axis</label>
+        <select id="rotationAxisGif" style="width: 100%;">
+          <option value="y">Y-Axis</option>
+          <option value="x">X-Axis</option>
+        </select>
+      </div>
+      
+      <button id="exportBtn" style="width: 100%; margin-top: 10px; padding: 12px; background: #8B7E74; color: #fff; font-weight: bold; border: none; border-radius: 4px; font-size: 14px;">Export</button>
+      <div id="exportProgress" style="display: none; margin-top: 10px; padding: 8px; background: #1a1a1a; border-radius: 4px; text-align: center; color: #8B7E74; font-size: 12px;"></div>
+    </div>
+  </div>
+
+  <script src="sketch.js"></script>
+  <script src="export.js"></script>
+  
+  <script>
+    // ===== CLIPPELIE ANIMATION =====
+    const clippelieAsciiOpen = `     /////|||||\\\\\\\\\\
+   /////         \\\\\\\\\\
+   ||  ~~~_____~~~  ||
+   || /--(o)=(o)--\\ ||
+   |||  0   U   0  |||
+   |(|      -3     |)|
+   || \\___________/ ||
+   ||||||  | |  ||||||  
+   ||  ___/   \\___  ||
+      /           \\
+     /  /|     |\\  \\
+    /  / |     | \\  \\`;
+    
+    const clippelieAsciiClosed = `     /////|||||\\\\\\\\\\
+   /////         \\\\\\\\\\
+   ||  ~~~_____~~~  ||
+   || /--(_)=(_)--\\ ||
+   |||  0   U   0  |||
+   |(|      -3     |)|
+   || \\___________/ ||
+   ||||||  | |  ||||||  
+   ||  ___/   \\___  ||
+      /           \\
+     /  /|     |\\  \\
+    /  / |     | \\  \\`;
+    
+    // Clippelie blink on hover
+    const clippelieWindow = document.getElementById('clippelieWindow');
+    const clippelieAsciiElem = document.getElementById('clippelieAscii');
+    const clippelieToggle = document.getElementById('clippelieToggle');
+    
+    // Set initial state to open eyes
+    clippelieAsciiElem.textContent = clippelieAsciiOpen;
+    
+    // Function to move Clippelie to bottom-left (called when Space is first pressed)
+    window.moveClippelieToCorner = function() {
+      const clippelieWindow = document.getElementById('clippelieWindow');
+      const tipWindow = document.getElementById('tipWindow');
+      
+      // Remove intro classes
+      clippelieWindow.classList.remove('intro');
+      tipWindow.classList.remove('intro');
+      
+      // Hide tip window initially
+      tipWindow.style.display = 'none';
+      tipWindow.classList.remove('visible');
+      
+      // Schedule later tips
+      scheduleLaterTips();
+    };
+    
+    // Toggle Clippelie window
+    clippelieToggle.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const clippelieNotification = document.getElementById('clippelieNotification');
+      const isMinimized = clippelieWindow.classList.contains('minimized');
+      
+      clippelieWindow.classList.toggle('minimized');
+      this.textContent = clippelieWindow.classList.contains('minimized') ? '▲' : '▼';
+      
+      // Hide tip window when Clippelie is minimized
+      if (clippelieWindow.classList.contains('minimized')) {
+        document.getElementById('tipWindow').classList.remove('visible');
+        document.getElementById('tipWindow').style.display = 'none';
+      } else {
+        // When opening, check if there's a pending notification
+        if (clippelieNotification.classList.contains('has-notification')) {
+          const pendingTipIndex = clippelieNotification.dataset.pendingTip;
+          if (pendingTipIndex !== undefined) {
+            clippelieNotification.classList.remove('has-notification');
+            delete clippelieNotification.dataset.pendingTip;
+            // Show tip with a slight delay (400ms) so it doesn't overlap with the opening animation
+            setTimeout(() => {
+              showTip(parseInt(pendingTipIndex));
+            }, 400);
+          }
+        }
+      }
+    });
+    
+    clippelieWindow.addEventListener('mouseenter', () => {
+      if (!clippelieWindow.classList.contains('minimized')) {
+        clippelieAsciiElem.textContent = clippelieAsciiClosed;
+      }
+    });
+    
+    clippelieWindow.addEventListener('mouseleave', () => {
+      if (!clippelieWindow.classList.contains('minimized')) {
+        clippelieAsciiElem.textContent = clippelieAsciiOpen;
+      }
+    });
+    
+    const tips = [
+      {
+        delay: 4000, // 5 seconds after Space press
+        content: 'Press <strong>Space</strong> again to rotate your drawing!',
+        icon: 'rotate'
+      },
+      {
+        delay: 4000 + 25000, // 40 seconds (5s + 35s)
+        content: 'Use the <strong>Depth</strong> dropdown to change the settings for the z-Axis!',
+        icon: 'none'
+      },
+      {
+        delay: 4000 + 25000 * 2, // 75 seconds (5s + 70s)
+        content: 'Have you tried the <strong>Grid Mode</strong> yet?',
+        icon: 'grid'
+      },
+      {
+        delay: 4000 + 25000 * 3, // 110 seconds (5s + 105s)
+        content: 'You can <strong>zoom in and out</strong> using your mouse wheel or the slider!',
+        icon: 'none'
+      },
+      {
+        delay: 4000 + 25000 * 4, // 145 seconds (5s + 140s)
+        content: 'Tick <strong>"Enable Shading"</strong> to add dimension to your letters!',
+        icon: 'none'
+      },
+      {
+        delay: 4000 + 25000 * 5, // 180 seconds (5s + 175s)
+        content: 'With the <strong>Arrow Keys Drawing Method </strong>  , you can draw straight lines:<br>↑ = Up, ↓ = Down, ← = Left, → = Right<br><strong>Q</strong> = Forward (Z+), <strong>W</strong> = Backward (Z-)',
+        icon: 'none'
+      },
+      {
+        delay: 4000 + 25000 * 6, // 215 seconds (5s + 210s)
+        content: 'The <strong>Weingart Cube</strong> effect only works in combination with the <strong>Pixel Brush</strong>!',
+        icon: 'cube'
+      },
+      {
+        delay: 4000 + 25000 * 7, // 250 seconds (5s + 245s)
+        content: 'Press <strong>C</strong> to clear the canvas!',
+        icon: 'none'
+      },
+      {
+        delay: 4000 + 25000 * 8, // 275 seconds (5s + 270s)
+        content: 'You can export your letters and shapes as <strong>SVG vectors</strong> for further editing!',
+        icon: 'none'
+      }
+    ];
+    
+    let currentTipIndex = 0;
+    let tipTimeouts = [];
+    const dismissedTips = new Set();
+    let isTipActive = false; // Track if a tip is currently showing
+    let pendingTips = []; // Queue of tips waiting to be shown
+    
+    function scheduleLaterTips() {
+      tips.forEach((tip, index) => {
+        const timeout = setTimeout(() => {
+          currentTipIndex = index;
+          // Only show tip if no other tip is currently active
+          if (!isTipActive) {
+            showTip(index);
+          } else {
+            // Queue this tip to show later
+            if (!pendingTips.includes(index)) {
+              pendingTips.push(index);
+            }
+          }
+        }, tip.delay);
+        tipTimeouts.push(timeout);
+      });
+    }
+    
+    // Make function available globally for sketch.js
+    window.scheduleLaterTips = scheduleLaterTips;
+    
+    function showTip(tipIndex) {
+      if (dismissedTips.has(tipIndex)) return;
+      
+      const tip = tips[tipIndex];
+      const clippelieWindow = document.getElementById('clippelieWindow');
+      const tipWindow = document.getElementById('tipWindow');
+      const tipContent = document.getElementById('tipContent');
+      const tipClose = document.getElementById('tipClose');
+      const tipIconContainer = tipWindow.querySelector('.tip-icon-container');
+      const clippelieNotification = document.getElementById('clippelieNotification');
+      
+      // If Clippelie is minimized, show notification badge instead
+      // Store ONLY the latest tip (replace any previous pending tip)
+      if (clippelieWindow.classList.contains('minimized')) {
+        clippelieNotification.classList.add('has-notification');
+        clippelieNotification.dataset.pendingTip = tipIndex; // Overwrites previous
+        return;
+      }
+      
+      // Mark tip as active
+      isTipActive = true;
+      
+      // Update content
+      tipContent.innerHTML = tip.content;
+      
+      // Show/hide icons
+      const tipCubeNetContainer = document.querySelector('.tip-cube-net-container');
+      
+      if (tip.icon === 'grid') {
+        tipIconContainer.style.display = 'flex';
+        tipCubeNetContainer.style.display = 'none';
+      } else if (tip.icon === 'cube') {
+        tipIconContainer.style.display = 'none';
+        tipCubeNetContainer.style.display = 'flex';
+      } else {
+        tipIconContainer.style.display = 'none';
+        tipCubeNetContainer.style.display = 'none';
+      }
+      
+      // Show close button and tip window
+      tipClose.style.display = 'flex';
+      tipWindow.style.display = 'block';
+      tipWindow.classList.add('visible');
+    }
+    
+    function closeTip() {
+      const tipWindow = document.getElementById('tipWindow');
+      tipWindow.style.display = 'none';
+      tipWindow.classList.remove('visible');
+      dismissedTips.add(currentTipIndex);
+      isTipActive = false;
+      
+      // Show next pending tip if any exist
+      if (pendingTips.length > 0) {
+        const nextTipIndex = pendingTips.shift(); // Get and remove first pending tip
+        setTimeout(() => {
+          showTip(nextTipIndex);
+        }, 500); // Small delay before showing next tip
+      }
+    }
+    
+    // Close button handler
+    document.getElementById('tipClose').addEventListener('click', closeTip);
+    
+    // ===== END CLIPPELIE =====
+    
+    // Update slider fill on change
+    function updateSliderFill(slider) {
+      const value = (slider.value - slider.min) / (slider.max - slider.min) * 100;
+      slider.style.setProperty('--value', value + '%');
+    }
+    
+    // Initialize all sliders
+    document.querySelectorAll('#cubeConfigPanel input[type="range"]').forEach(slider => {
+      updateSliderFill(slider);
+      slider.addEventListener('input', () => updateSliderFill(slider));
+    });
+    
+    // Update value displays
+    const updateDisplay = (sliderId, displayId, decimals = 0) => {
+      const slider = document.getElementById(sliderId);
+      const display = document.getElementById(displayId);
+      if (slider && display) {
+        slider.addEventListener('input', () => {
+          display.textContent = parseFloat(slider.value).toFixed(decimals);
+        });
+      }
+    };
+
+    updateDisplay('letterSizeSlider', 'letterSizeValue', 0);
+    updateDisplay('visibleFacesSlider', 'visibleFacesValue', 0);
+    updateDisplay('surfaceTextScaleSlider', 'surfaceTextScaleValue', 1);
+    updateDisplay('outlineTextScaleSlider', 'outlineTextScaleValue', 1);
+    updateDisplay('outline3DLetterSizeSlider', 'outline3DLetterSizeValue', 0);
+    updateDisplay('pixelSizeSlider', 'pixelSizeValue', 0);
+    updateDisplay('waveSlider', 'waveValue', 0);
+    updateDisplay('rotateSlider', 'rotateValue', 3);
+    updateDisplay('textPosXSlider', 'textPosXValue', 2);
+    updateDisplay('textPosYSlider', 'textPosYValue', 2);
+    updateDisplay('zDepthSlider', 'zDepthValue', 0);
+    updateDisplay('zSpeedSlider', 'zSpeedValue', 2);
+    updateDisplay('tendrilCountSlider', 'tendrilCountValue', 0);
+    updateDisplay('tendrilDiameterSlider', 'tendrilDiameterValue', 0);
+    updateDisplay('exportRotXSlider', 'exportRotXValue', 0);
+    updateDisplay('exportRotYSlider', 'exportRotYValue', 0);
+    
+    // Export functionality
+    // Preview style buttons
+    let currentStyle = 'white';
+    
+    document.getElementById('styleWhite').addEventListener('click', function() {
+      currentStyle = 'white';
+      updateStyleButtons();
+      sendStyleToPreview();
+    });
+    
+    document.getElementById('styleBlack').addEventListener('click', function() {
+      currentStyle = 'black';
+      updateStyleButtons();
+      sendStyleToPreview();
+    });
+    
+    document.getElementById('stylePink').addEventListener('click', function() {
+      currentStyle = 'pink';
+      updateStyleButtons();
+      sendStyleToPreview();
+    });
+    
+    function updateStyleButtons() {
+      document.querySelectorAll('.style-button').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('style' + currentStyle.charAt(0).toUpperCase() + currentStyle.slice(1)).classList.add('active');
+    }
+    
+    function sendStyleToPreview() {
+      let previewFrame = document.getElementById('previewFrame');
+      if (previewFrame && previewFrame.contentWindow) {
+        previewFrame.contentWindow.postMessage({ style: currentStyle }, '*');
+      }
+    }
+    
+    // Initialize with white style on load
+    window.addEventListener('load', function() {
+      updateStyleButtons();
+      setTimeout(sendStyleToPreview, 100);
+    });
+    
+    // Effect type selector
+    document.getElementById('brushEffect').addEventListener('change', function() {
+      const effectType = this.value;
+      
+      // Check if weingart is selected with non-pixel brush
+      const currentBrush = document.getElementById('brushType').value;
+      if (effectType === 'weingart' && currentBrush !== 'pixel') {
+        alert('Weingart Cubes effect only works with Pixel brush!');
+        this.value = 'none';
+        return;
+      }
+      
+      // Update sketch.js brushEffect variable
+      if (typeof window.brushEffect !== 'undefined') {
+        window.brushEffect = effectType;
+      }
+      
+      // Hide all control groups
+      const outlinesControls = document.getElementById('outlinesControls');
+      const growthControls = document.getElementById('growthControls');
+      const weingartControls = document.getElementById('weingartControls');
+      
+      if (outlinesControls) outlinesControls.style.display = 'none';
+      if (growthControls) growthControls.style.display = 'none';
+      if (weingartControls) weingartControls.style.display = 'none';
+      
+      // Show relevant controls and create knobs
+      if (effectType === 'outlines' && outlinesControls) {
+        outlinesControls.style.display = 'block';
+        
+        // Create outline knobs AFTER showing the controls
+        setTimeout(() => {
+          createKnob(document.getElementById('outlineLevelsSlider'), 'Number');
+          createKnob(document.getElementById('outlineSpacingSlider'), 'Space');
+        }, 10);
+      } else if (effectType === 'growth' && growthControls) {
+        growthControls.style.display = 'block';
+        
+        // Create growth knob (will be skipped if already created)
+        createKnob(document.getElementById('growthIntensitySlider'), 'Growth Power');
+      } else if (effectType === 'weingart' && weingartControls) {
+        weingartControls.style.display = 'block';
+        
+        // Create weingart knobs and redraw canvas
+        setTimeout(() => {
+          const letterSizeSlider = document.getElementById('cubeLetterSize');
+          
+          if (letterSizeSlider) {
+            createKnob(letterSizeSlider, 'Letter Size');
+          }
+          
+          // Trigger canvas redraw
+          if (typeof window.drawCubePreview === 'function') {
+            window.drawCubePreview();
+          }
+          if (typeof window.drawCubeNetPreview === 'function') {
+            window.drawCubeNetPreview();
+          }
+        }, 50);
+      }
+    });
+    
+    // Trigger initial effect display on page load
+    window.addEventListener('load', function() {
+      const brushEffectSelect = document.getElementById('brushEffect');
+      if (brushEffectSelect && brushEffectSelect.value !== 'none') {
+        brushEffectSelect.dispatchEvent(new Event('change'));
+      }
+    });
+    
+    // Removed brush type filtering - all effects now available for all brushes
+    
+    // Toggle preview window size
+    document.getElementById('previewToggle').addEventListener('click', function(e) {
+      e.stopPropagation();
+      const previewWindow = document.getElementById('previewWindow');
+      previewWindow.classList.toggle('minimized');
+      this.textContent = previewWindow.classList.contains('minimized') ? '▲' : '▼';
+    });
+
+    // ===== ROTARY KNOB FUNCTIONALITY =====
+    const initializedKnobs = new Set(); // Track which knobs have been created
+
+    function createKnob(inputElement, label) {
+      // Check if this knob was already created
+      const knobId = inputElement.id;
+      if (initializedKnobs.has(knobId)) {
+        return; // Already created, skip
+      }
+      
+      const container = document.createElement('div');
+      container.className = 'knob-container';
+      
+      const wrapper = document.createElement('div');
+      wrapper.className = 'knob-wrapper';
+      
+      const knob = document.createElement('div');
+      knob.className = 'knob';
+      
+      const indicator = document.createElement('div');
+      indicator.className = 'knob-indicator';
+      
+      const track = document.createElement('div');
+      track.className = 'knob-track';
+      
+      const labelDiv = document.createElement('div');
+      labelDiv.className = 'knob-label';
+      
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'knob-title';
+      titleSpan.textContent = label;
+      
+      const valueSpan = document.createElement('span');
+      valueSpan.className = 'knob-value';
+      
+      knob.appendChild(indicator);
+      wrapper.appendChild(track);
+      wrapper.appendChild(knob);
+      labelDiv.appendChild(titleSpan);
+      labelDiv.appendChild(valueSpan);
+      container.appendChild(wrapper);
+      container.appendChild(labelDiv);
+      
+      // Create or reuse grid container specific to this parent
+      const parentNode = inputElement.parentNode;
+      
+      // Look for existing grid near this slider
+      let grid = null;
+      
+      // Find the label before this input (if exists)
+      let labelBefore = inputElement.previousElementSibling;
+      while (labelBefore && labelBefore.tagName !== 'LABEL') {
+        if (labelBefore.classList && labelBefore.classList.contains('knob-grid')) {
+          grid = labelBefore;
+          break;
+        }
+        labelBefore = labelBefore.previousElementSibling;
+      }
+      
+      if (!grid || grid.children.length >= 2) {
+        grid = document.createElement('div');
+        grid.className = 'knob-grid';
+        // Insert right before the input slider (keeps label → grid → slider order)
+        parentNode.insertBefore(grid, inputElement);
+      }
+      
+      grid.appendChild(container);
+      
+      // Hide the original input slider
+      inputElement.style.display = 'none';
+      
+      // Mark this knob as initialized
+      initializedKnobs.add(knobId);
+      
+      // Get slider properties
+      const min = parseFloat(inputElement.min);
+      const max = parseFloat(inputElement.max);
+      const step = parseFloat(inputElement.step);
+      let value = parseFloat(inputElement.value);
+      
+      // Update display
+      function updateKnob() {
+        const percent = (value - min) / (max - min);
+        const angle = -135 + (percent * 270); // -135° to +135° (270° range)
+        knob.style.transform = `rotate(${angle}deg)`;
+        
+        // Format value display
+        let displayValue = value;
+        if (step < 1) {
+          displayValue = value.toFixed(2);
+        } else {
+          displayValue = Math.round(value);
+        }
+        valueSpan.textContent = displayValue;
+        
+        inputElement.value = value;
+        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      
+      updateKnob();
+      
+      // Mouse interaction
+      let isDragging = false;
+      
+      function onMouseDown(e) {
+        isDragging = true;
+        e.preventDefault();
+        updateFromMouse(e);
+      }
+      
+      function onMouseMove(e) {
+        if (!isDragging) return;
+        updateFromMouse(e);
+      }
+      
+      function updateFromMouse(e) {
+        const rect = knob.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        
+        const deltaX = e.clientX - centerX;
+        const deltaY = e.clientY - centerY;
+        
+        // Calculate angle from center (-180 to 180)
+        let angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+        
+        // Convert to knob range (0° at top, clockwise)
+        angle = angle + 90;
+        if (angle < 0) angle += 360;
+        
+        // Map angle to value range (limiting to -135° to +135° from top = 270° total range)
+        // Top = 0°, Right = 90°, Bottom = 180°, Left = 270°
+        // Our range: -135° (225°) to +135° (135°) = 225° to 135° wrapping through 0°
+        
+        let knobAngle;
+        if (angle >= 0 && angle <= 135) {
+          // Right side: 0° to 135° maps to 50% to 100%
+          knobAngle = angle;
+        } else if (angle >= 225 && angle <= 360) {
+          // Left side: 225° to 360° maps to 0% to 50%
+          knobAngle = angle - 360;
+        } else {
+          // Don't update if in dead zone (135° to 225°)
+          return;
+        }
+        
+        // Map to -135 to +135 range
+        knobAngle = Math.max(-135, Math.min(135, knobAngle));
+        
+        // Map to value
+        const percent = (knobAngle + 135) / 270;
+        value = min + (percent * (max - min));
+        
+        // Snap to step
+        value = Math.round(value / step) * step;
+        value = Math.max(min, Math.min(max, value));
+        
+        updateKnob();
+      }
+      
+      function onMouseUp() {
+        isDragging = false;
+      }
+      
+      knob.addEventListener('mousedown', onMouseDown);
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+      
+      return { updateKnob, setValue: (v) => { value = v; updateKnob(); } };
+    }
+    
+    // Initialize all knobs after DOM is loaded
+    window.addEventListener('load', function() {
+      // === CRITICAL: Create Brush Settings Knobs FIRST ===
+      // These must always be visible regardless of collapsed sections
+      const brushSizeSlider = document.getElementById('pixelSizeSlider');
+      const dynamicsSlider = document.getElementById('waveSlider');
+      
+      if (brushSizeSlider && dynamicsSlider) {
+        createKnob(brushSizeSlider, 'Brush Size');
+        createKnob(dynamicsSlider, 'Dynamics');
+        console.log('Brush Settings knobs created');
+      } else {
+        console.error('Could not find brush sliders!');
+      }
+      
+      // Letter Generator knob
+      const letterSizeSlider = document.getElementById('letterSize');
+      if (letterSizeSlider) {
+        createKnob(letterSizeSlider, 'Letter Size');
+        console.log('Letter Size knob created');
+      }
+      
+      // Other knobs
+      const knobs = [
+        // View/Depth section
+        { id: 'rotateSlider', label: 'Rot. Speed' },
+        { id: 'zDepthSlider', label: 'Z-Depth' },
+        { id: 'zSpeedSlider', label: 'Z-Speed' },
+        
+        // Text projections (not cubes - those use visible sliders)
+        { id: 'surfaceTextScaleSlider', label: 'Text Scale' },
+        { id: 'outlineTextScaleSlider', label: 'Text Scale' }
+      ];
+      
+      knobs.forEach(({ id, label }) => {
+        const input = document.getElementById(id);
+        if (input) {
+          createKnob(input, label);
+        }
+      });
+    });
+  </script>
+  
+  <script>
+    // Collapsible sections functionality
+    function setupCollapsibleSections() {
+      const sections = [
+        { header: 'brushHeader', section: 'brushSection' },
+        { header: 'effectsHeader', section: 'effectsSection' },
+        { header: 'letterHeader', section: 'letterSection' },
+        { header: 'exportHeader', section: 'exportSection' },
+        { header: 'cubeHeader', section: 'cubeSection' }
+      ];
+      
+      sections.forEach(({ header, section }) => {
+        const headerEl = document.getElementById(header);
+        const sectionEl = document.getElementById(section);
+        
+        if (headerEl && sectionEl) {
+          headerEl.addEventListener('click', function() {
+            const isCollapsed = sectionEl.style.display === 'none';
+            sectionEl.style.display = isCollapsed ? 'block' : 'none';
+            headerEl.classList.toggle('collapsed', !isCollapsed);
+          });
+        }
+      });
+    }
+    
+    // Initialize collapsible sections after DOM load
+    window.addEventListener('load', setupCollapsibleSections);
+    
+    // Brush-specific controls switcher
+    function updateCubeConfigForBrush(brushType) {
+      const pixelControls = document.getElementById('pixelCubeControls');
+      const surfaceControls = document.getElementById('surfaceBrushControls');
+      const outlineControls = document.getElementById('outlineBrushControls');
+      
+      // Hide all
+      if (pixelControls) pixelControls.style.display = 'none';
+      if (surfaceControls) surfaceControls.style.display = 'none';
+      if (outlineControls) outlineControls.style.display = 'none';
+      
+      // Show relevant controls
+      if (brushType === 'pixel' && pixelControls) {
+        pixelControls.style.display = 'block';
+      } else if (brushType === 'surface' && surfaceControls) {
+        surfaceControls.style.display = 'block';
+      } else if (brushType === 'outline2' && outlineControls) {
+        outlineControls.style.display = 'block';
+      }
+    }
+    
+    // Listen to brush type changes
+    window.addEventListener('load', function() {
+      const brushTypeSelect = document.getElementById('brushType');
+      const brushEffectSelect = document.getElementById('brushEffect');
+      
+      if (brushTypeSelect) {
+        // Initialize on load
+        updateCubeConfigForBrush(brushTypeSelect.value);
+        updateWeingartAvailability(brushTypeSelect.value);
+        
+        // Update on change
+        brushTypeSelect.addEventListener('change', function() {
+          updateCubeConfigForBrush(this.value);
+          updateWeingartAvailability(this.value);
+        });
+      }
+      
+      // Function to enable/disable Weingart option based on brush type
+      function updateWeingartAvailability(brushType) {
+        const weingartOption = brushEffectSelect.querySelector('option[value="weingart"]');
+        if (weingartOption) {
+          if (brushType === 'pixel') {
+            weingartOption.disabled = false;
+            weingartOption.style.color = '';
+          } else {
+            weingartOption.disabled = true;
+            weingartOption.style.color = '#666';
+            // Reset to none if weingart was selected
+            if (brushEffectSelect.value === 'weingart') {
+              brushEffectSelect.value = 'none';
+              brushEffectSelect.dispatchEvent(new Event('change'));
+            }
+          }
+        }
+      }
+    });
+    
+    // Arrow Keys Info Toggle
+    window.addEventListener('load', function() {
+      const drawingMethodSelect = document.getElementById('drawingMethod');
+      const arrowKeysInfo = document.getElementById('arrowKeysInfo');
+      const closeArrowInfo = document.getElementById('closeArrowInfo');
+      
+      if (drawingMethodSelect && arrowKeysInfo) {
+        // Show/hide info when drawing method changes
+        drawingMethodSelect.addEventListener('change', function() {
+          if (this.value === 'arrow') {
+            arrowKeysInfo.style.display = 'block';
+          } else {
+            arrowKeysInfo.style.display = 'none';
+          }
+        });
+        
+        // Close button
+        if (closeArrowInfo) {
+          closeArrowInfo.addEventListener('click', function() {
+            arrowKeysInfo.style.display = 'none';
+          });
+        }
+      }
+      
+      // Prevent UI elements from intercepting keyboard shortcuts
+      // Blur any focused UI element when canvas is clicked
+      const canvasContainer = document.getElementById('canvasContainer');
+      if (canvasContainer) {
+        canvasContainer.addEventListener('mousedown', function() {
+          if (document.activeElement && document.activeElement.blur) {
+            document.activeElement.blur();
+          }
+        });
+      }
+      
+      // Prevent Enter/Space from activating UI elements
+      document.getElementById('cubeConfigPanel').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          // Check if it's a text input (allow Enter/Space there)
+          if (e.target.tagName !== 'INPUT' || e.target.type !== 'text') {
+            e.preventDefault();
+            e.stopPropagation();
+            // Blur the element so focus goes back to canvas
+            if (e.target && e.target.blur) {
+              e.target.blur();
+            }
+          }
+        }
+      }, true);
+    });
+  </script>
+  
+  <script>
+    // Grid Toggle Button
+    let previousBrushType = 'smooth';
+    
+    document.getElementById('gridToggleBtn').addEventListener('click', function() {
+      // Toggle showGrid variable in p5 sketch
+      if (typeof window.showGrid !== 'undefined') {
+        window.showGrid = !window.showGrid;
+        
+        let brushTypeSelect = document.getElementById('brushType');
+        let options = brushTypeSelect.getElementsByTagName('option');
+        let gridSizeControl = document.getElementById('gridSizeControl');
+        
+        // Update button appearance
+        if (window.showGrid) {
+          this.classList.add('active');
+          
+          // Show grid size control panel
+          gridSizeControl.classList.add('visible');
+          
+          // Save current brush and switch to pixel
+          previousBrushType = brushTypeSelect.value;
+          brushTypeSelect.value = 'pixel';
+          if (typeof window.brushType !== 'undefined') window.brushType = 'pixel';
+          
+          // Disable all non-pixel brushes
+          for (let i = 0; i < options.length; i++) {
+            if (options[i].value !== 'pixel') {
+              options[i].disabled = true;
+              options[i].style.opacity = '0.4';
+            }
+          }
+          
+          // Convert existing tubes to grid cells
+          if (typeof window.convertTubesToGrid === 'function') {
+            window.convertTubesToGrid();
+          }
+          
+        } else {
+          this.classList.remove('active');
+          
+          // Hide grid size control panel
+          gridSizeControl.classList.remove('visible');
+          
+          // Convert grid cells back to tubes and clear grid
+          if (typeof window.convertGridToTubes === 'function') {
+            window.convertGridToTubes();
+          }
+          
+          // Restore previous brush
+          brushTypeSelect.value = previousBrushType;
+          if (typeof window.brushType !== 'undefined') window.brushType = previousBrushType;
+          
+          // Re-enable all brushes
+          for (let i = 0; i < options.length; i++) {
+            options[i].disabled = false;
+            options[i].style.opacity = '1';
+          }
+        }
+      }
+    });
+    
+    // Grid Size Control Slider
+    let gridSizeControlSlider = document.getElementById('gridSizeControlSlider');
+    let gridSizeValue = document.getElementById('gridSizeValue');
+    let mainGridSlider = document.getElementById('gridSizeSlider');
+    
+    // Sync grid size control with main slider
+    if (mainGridSlider) {
+      gridSizeControlSlider.value = mainGridSlider.value;
+      gridSizeValue.textContent = mainGridSlider.value;
+    }
+    
+    gridSizeControlSlider.addEventListener('input', function() {
+      let newSize = parseFloat(this.value);
+      
+      gridSizeValue.textContent = newSize;
+      
+      // Update main slider
+      if (mainGridSlider) {
+        mainGridSlider.value = newSize;
+      }
+      
+      // Update grid size in p5 sketch
+      window.gridSize = newSize;
+      
+      // Trigger grid dimension update
+      if (typeof window.updateGridDimensions === 'function') {
+        window.updateGridDimensions();
+      }
+    });
+    
+    // Letter Size Slider (for 3D cube letters)
+    let cubeLetterSizeSlider = document.getElementById('letterSizeSlider');
+    let cubeLetterSizeValue = document.getElementById('letterSizeValue');
+    if (cubeLetterSizeSlider && cubeLetterSizeValue) {
+      cubeLetterSizeSlider.addEventListener('input', function() {
+        cubeLetterSizeValue.textContent = this.value;
+        // Update text size in sketch
+        if (typeof window.cubeConfig !== 'undefined') {
+          window.cubeConfig.textSize = parseFloat(this.value);
+        }
+      });
+    }
+    
+    // Visible Faces Slider
+    let visibleFacesSlider = document.getElementById('visibleFacesSlider');
+    let visibleFacesValue = document.getElementById('visibleFacesValue');
+    if (visibleFacesSlider && visibleFacesValue) {
+      visibleFacesSlider.addEventListener('input', function() {
+        let count = parseInt(this.value);
+        visibleFacesValue.textContent = count + (count === 1 ? ' face' : ' faces');
+        // Update visible faces in sketch
+        if (typeof window.cubeConfig !== 'undefined') {
+          window.cubeConfig.visibleFaces = count;
+        }
+      });
+    }
+    
+    // Font Upload Handler
+    let fontSelect = document.getElementById('fontSelect');
+    let fontUploadSection = document.getElementById('fontUploadSection');
+    let fontUpload = document.getElementById('fontUpload');
+    
+    if (fontSelect && fontUploadSection) {
+      fontSelect.addEventListener('change', function() {
+        if (this.value === 'Custom') {
+          fontUploadSection.style.display = 'block';
+        } else {
+          fontUploadSection.style.display = 'none';
+        }
+      });
+    }
+    
+    if (fontUpload) {
+      fontUpload.addEventListener('change', function(e) {
+        let file = e.target.files[0];
+        if (file) {
+          let reader = new FileReader();
+          reader.onload = function(event) {
+            // Create font face
+            let fontName = 'CustomUploadedFont';
+            let fontFace = new FontFace(fontName, event.target.result);
+            fontFace.load().then(function(loadedFace) {
+              document.fonts.add(loadedFace);
+              // Update sketch to use custom font
+              if (typeof window.cubeConfig !== 'undefined') {
+                window.cubeConfig.font = fontName;
+              }
+              console.log('Custom font loaded:', fontName);
+            }).catch(function(error) {
+              console.error('Error loading font:', error);
+              alert('Could not load font. Please try a different file.');
+            });
+          };
+          reader.readAsArrayBuffer(file);
+        }
+      });
+    }
+    
+    // Surface Text Controls
+    let textOnSurfaceCheck = document.getElementById('textOnSurfaceCheck');
+    let surfaceTextControls = document.getElementById('surfaceTextControls');
+    let surfaceTextInput = document.getElementById('surfaceTextInput');
+    let surfaceTextScaleSlider = document.getElementById('surfaceTextScaleSlider');
+    let surfaceTextScaleValue = document.getElementById('surfaceTextScaleValue');
+    
+    if (textOnSurfaceCheck && surfaceTextControls) {
+      textOnSurfaceCheck.addEventListener('change', function() {
+        surfaceTextControls.style.display = this.checked ? 'block' : 'none';
+        if (typeof window.cubeConfig !== 'undefined') {
+          window.cubeConfig.textOnSurface = this.checked;
+        }
+      });
+    }
+    
+    if (surfaceTextInput) {
+      surfaceTextInput.addEventListener('input', function() {
+        if (typeof window.cubeConfig !== 'undefined') {
+          window.cubeConfig.brushText = this.value.toUpperCase();
+        }
+      });
+    }
+    
+    if (surfaceTextScaleSlider && surfaceTextScaleValue) {
+      surfaceTextScaleSlider.addEventListener('input', function() {
+        surfaceTextScaleValue.textContent = parseFloat(this.value).toFixed(1);
+        if (typeof window.cubeConfig !== 'undefined') {
+          window.cubeConfig.brushTextScale = parseFloat(this.value);
+        }
+      });
+    }
+    
+    // Outline Text Controls
+    let textOnOutlineCheck = document.getElementById('textOnOutlineCheck');
+    let outlineTextControls = document.getElementById('outlineTextControls');
+    let outlineTextInput = document.getElementById('outlineTextInput');
+    let outlineTextScaleSlider = document.getElementById('outlineTextScaleSlider');
+    let outlineTextScaleValue = document.getElementById('outlineTextScaleValue');
+    let textRepeatCheck = document.getElementById('textRepeatCheck');
+    
+    if (textOnOutlineCheck && outlineTextControls) {
+      textOnOutlineCheck.addEventListener('change', function() {
+        outlineTextControls.style.display = this.checked ? 'block' : 'none';
+        if (typeof window.cubeConfig !== 'undefined') {
+          window.cubeConfig.textOnOutline = this.checked;
+        }
+      });
+    }
+    
+    if (outlineTextInput) {
+      outlineTextInput.addEventListener('input', function() {
+        if (typeof window.cubeConfig !== 'undefined') {
+          window.cubeConfig.brushText = this.value.toUpperCase();
+        }
+      });
+    }
+    
+    if (outlineTextScaleSlider && outlineTextScaleValue) {
+      outlineTextScaleSlider.addEventListener('input', function() {
+        outlineTextScaleValue.textContent = parseFloat(this.value).toFixed(1);
+        if (typeof window.cubeConfig !== 'undefined') {
+          window.cubeConfig.brushTextScale = parseFloat(this.value);
+        }
+      });
+    }
+    
+    if (textRepeatCheck) {
+      textRepeatCheck.addEventListener('change', function() {
+        if (typeof window.cubeConfig !== 'undefined') {
+          window.cubeConfig.textRepeat = this.checked;
+        }
+      });
+    }
+
+    // Letter Generator Controls
+    // Weingart Activate Button
+    const activateBtn = document.getElementById('activateWeingartBtn');
+    console.log('Activate Button gefunden:', activateBtn);
+    if (activateBtn) {
+      activateBtn.addEventListener('click', function() {
+        console.log('Activate Button geklickt!');
+        if (typeof window.activateWeingartMode === 'function') {
+            window.activateWeingartMode();
+          } else {
+            console.error('activateWeingartMode function nicht gefunden!');
+          }
+        });
+      }
+      
+      let letterGenSizeSlider = document.getElementById('letterSize');
+      let letterGenSizeValue = document.getElementById('letterSizeValue');
+      let generateLetterBtn = document.getElementById('generateLetterBtn');
+      
+      console.log('=== Letter Generator Setup ===');
+      console.log('letterGenSizeSlider:', letterGenSizeSlider);
+      console.log('letterGenSizeValue:', letterGenSizeValue);
+      console.log('generateLetterBtn:', generateLetterBtn);
+      
+      if (letterGenSizeSlider && letterGenSizeValue) {
+        letterGenSizeSlider.addEventListener('input', function() {
+          letterGenSizeValue.textContent = this.value;
+        });
+      }
+
+      // Custom font upload handler
+      let customFontUpload = document.getElementById('customFontUpload');
+      let customFontStatus = document.getElementById('customFontStatus');
+      let letterFontSelect = document.getElementById('letterFont');
+      
+      if (customFontUpload && customFontStatus && letterFontSelect) {
+        // Trigger file upload when "Upload Custom Font" is selected
+        letterFontSelect.addEventListener('change', function() {
+          if (this.value === '__UPLOAD__') {
+            customFontUpload.click();
+          }
+        });
+        
+        customFontUpload.addEventListener('change', function(e) {
+          let file = e.target.files[0];
+          if (!file) {
+            // Reset to previous selection if cancelled
+            let options = letterFontSelect.options;
+            for (let i = 0; i < options.length; i++) {
+              if (options[i].value !== '__UPLOAD__' && options[i].value.startsWith('CustomFont_')) {
+                letterFontSelect.value = options[i].value;
+                return;
+              }
+            }
+            letterFontSelect.value = 'Arial, sans-serif';
+            return;
+          }
+          
+          customFontStatus.textContent = 'Loading font...';
+          customFontStatus.style.color = '#ffa500';
+          
+          let reader = new FileReader();
+          reader.onload = function(event) {
+            let fontData = event.target.result;
+            
+            // Extract font name from filename (remove extension)
+            let fontName = file.name.replace(/\.(ttf|otf|woff|woff2)$/i, '');
+            fontName = fontName.replace(/[^a-zA-Z0-9]/g, ''); // Remove special chars
+            let fontFamily = 'CustomFont_' + fontName;
+            
+            // Create a new FontFace and load it
+            let fontFace = new FontFace(fontFamily, fontData);
+            fontFace.load().then(function(loadedFont) {
+              document.fonts.add(loadedFont);
+              
+              // Remove old upload option temporarily
+              let uploadOption = letterFontSelect.querySelector('option[value="__UPLOAD__"]');
+              if (uploadOption) uploadOption.remove();
+              
+              // Add to dropdown
+              let option = document.createElement('option');
+              option.value = fontFamily + ', sans-serif';
+              option.textContent = fontName + ' (Custom)';
+              letterFontSelect.appendChild(option);
+              
+              // Re-add upload option at the end
+              let newUploadOption = document.createElement('option');
+              newUploadOption.value = '__UPLOAD__';
+              newUploadOption.textContent = '+ Upload Custom Font...';
+              newUploadOption.style.color = '#ffa500';
+              newUploadOption.style.fontWeight = 'bold';
+              letterFontSelect.appendChild(newUploadOption);
+              
+              // Select the newly loaded font
+              letterFontSelect.value = option.value;
+              
+              customFontStatus.textContent = 'Font loaded: ' + fontName;
+              customFontStatus.style.color = '#4CAF50';
+              
+              console.log('Custom font loaded:', fontFamily);
+            }).catch(function(error) {
+              customFontStatus.textContent = 'Error loading font';
+              customFontStatus.style.color = '#f44336';
+              letterFontSelect.value = 'Arial, sans-serif';
+              console.error('Font loading error:', error);
+            });
+          };
+          
+          reader.onerror = function() {
+            customFontStatus.textContent = 'Error reading file';
+            customFontStatus.style.color = '#f44336';
+            letterFontSelect.value = 'Arial, sans-serif';
+          };
+          
+          reader.readAsArrayBuffer(file);
+        });
+      }
+
+      if (generateLetterBtn) {
+        console.log('Attaching click handler to generate button');
+        generateLetterBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('=== BUTTON CLICKED ===');
+          
+          // Get values from the Letter Generator section
+          let letterInput = document.getElementById('letterText');
+          let fontSelect = document.getElementById('letterFont');
+          let sizeSlider = document.getElementById('letterSize');
+          
+          console.log('Input elements:', {
+            letterInput: !!letterInput,
+            fontSelect: !!fontSelect,
+            sizeSlider: !!sizeSlider
+          });
+          
+          let letter = letterInput ? letterInput.value.trim() : 'A';
+          let font = fontSelect ? fontSelect.value : 'Arial, sans-serif';
+          let size = sizeSlider ? parseFloat(sizeSlider.value) : 100;
+          
+          if (!letter) {
+            alert('Please enter a letter to generate.');
+            return;
+          }
+          
+          console.log('Generating letter:', letter, 'Font:', font, 'Size:', size);
+          
+          // Call sketch function to generate letter outline
+          if (typeof window.generateLetterOutline === 'function') {
+            window.generateLetterOutline(letter, font, size);
+          } else {
+            console.error('generateLetterOutline function not found in sketch');
+          }
+        });
+      } else {
+        console.error('Generate Letter Button NOT FOUND!');
+      }
+
+    // On-canvas zoom slider
+    let onCanvasZoomSlider = document.getElementById('onCanvasZoomSlider');
+    let zoomDisplay = document.getElementById('zoomDisplay');
+    
+    if (onCanvasZoomSlider && zoomDisplay) {
+      onCanvasZoomSlider.addEventListener('input', function() {
+        let zoomValue = parseFloat(this.value);
+        zoomDisplay.textContent = zoomValue.toFixed(1) + 'x';
+        
+        // Update zoom in sketch - access the global voxelZoom variable directly
+        voxelZoom = zoomValue;
+      });
+    }
+  </script>
+</body>
+</html>

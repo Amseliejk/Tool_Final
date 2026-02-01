@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.0/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-clipper@1.0.1/clipper.min.js"></script>
+  <style>
+    * {
+      cursor: url('cursors/UI-Cursor.png') 16 16, auto !important;
+    }
+    body { margin: 0; padding: 0; overflow: hidden; background: #1a1a1a; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script>
+    let tubes = [];
+    let currentTube = [];
+    let isDrawing = false;
+    let rotationY = 0;
+    let brushType = "simple";
+    let basePixelSize = 8;
+    let previewStyle = "white";
+    let waveAnimationEnabled = true;
+    let waveAmpAndBlurRadius = 15;
+    let outlineLevels = 0;
+    let outlineSpacing = 8;
+    let isGridMode = false;
+    let gridCellsWorld = [];
+    let gridSize = 20;
+    let makeEndsMeet = false;
+    let endsMeetProgress = {};
+
+    function setup() {
+      createCanvas(200, 200, WEBGL);
+      frameRate(60);
+      
+      // Listen for messages from parent window
+      window.addEventListener('message', (event) => {
+        if (event.data.isGridMode !== undefined) {
+          isGridMode = event.data.isGridMode;
+        }
+        if (event.data.gridCellsWorld !== undefined) {
+          gridCellsWorld = event.data.gridCellsWorld;
+          gridSize = event.data.gridSize || 20;
+          basePixelSize = event.data.basePixelSize || gridSize;
+        }
+        if (event.data.tubes !== undefined) {
+          tubes = event.data.tubes;
+          brushType = event.data.brushType || "simple";
+          basePixelSize = event.data.basePixelSize || 8;
+          currentTube = event.data.currentTube || [];
+          isDrawing = event.data.isDrawing || false;
+          console.log('Preview received: isDrawing=', isDrawing, 'currentTube.length=', currentTube.length);
+          waveAnimationEnabled = event.data.waveAnimationEnabled !== undefined ? event.data.waveAnimationEnabled : true;
+          waveAmpAndBlurRadius = event.data.waveAmpAndBlurRadius || 15;
+          outlineLevels = event.data.outlineLevels || 0;
+          outlineSpacing = event.data.outlineSpacing || 8;
+          makeEndsMeet = event.data.makeEndsMeet || false;
+          endsMeetProgress = event.data.endsMeetProgress || {};
+        }
+        if (event.data.style !== undefined) {
+          previewStyle = event.data.style;
+        }
+      });
+    }
+
+    function draw() {
+      // Background color based on style
+      background(previewStyle === 'white' ? 240 : 20);
+      
+      // Rotate continuously - 360 degrees in 7 seconds
+      rotationY += TWO_PI / 420;
+      
+      // Add lighting
+      ambientLight(80);
+      directionalLight(255, 255, 255, 0.5, 0.5, -1);
+      
+      // Apply rotation
+      rotateX(0.5);
+      rotateY(rotationY);
+      
+      // Scale down to fit everything - use same scale for scene AND pixels
+      let previewScale = 0.25;
+      scale(previewScale);
+      
+      // If in grid mode, pixelate world coordinates through current grid size
+      if (isGridMode && gridCellsWorld.length > 0) {
+        let fillColor;
+        if (previewStyle === 'white') {
+          fillColor = color(0, 0, 0); // Black boxes
+        } else if (previewStyle === 'black') {
+          fillColor = color(255, 255, 255); // White boxes
+        } else { // pink
+          fillColor = color(255, 0, 255); // Magenta boxes
+        }
+        
+        fill(fillColor);
+        noStroke();
+        
+        // Pixelate world coordinates through grid
+        let pixelatedCells = new Set();
+        for (let worldPos of gridCellsWorld) {
+          // Snap to current grid (simple floor division)
+          let gx = floor(worldPos.x / gridSize);
+          let gy = floor(worldPos.y / gridSize);
+          let gz = floor(worldPos.z / gridSize);
+          let cellKey = `${gx},${gy},${gz}`;
+          pixelatedCells.add(cellKey);
+        }
+        
+        // Draw pixelated cells
+        for (let cellKey of pixelatedCells) {
+          let [gx, gy, gz] = cellKey.split(',').map(Number);
+          let x = gx * gridSize + gridSize / 2;
+          let y = gy * gridSize + gridSize / 2;
+          let z = gz * gridSize + gridSize / 2;
+          
+          push();
+          translate(x, y, z);
+          box(gridSize * 0.9);
+          pop();
+        }
+        return; // Don't draw tubes in grid mode
+      }
+      
+      // Define colors for currentTube (always available, even if no tubes yet)
+      let adjustedPixelSize = basePixelSize;
+      let currentStrokeColor, currentFillColor;
+      
+      if (previewStyle === 'white') {
+        currentStrokeColor = color(255, 0, 0); // Red for current
+        currentFillColor = color(255, 0, 0, 60);
+      } else if (previewStyle === 'black') {
+        currentStrokeColor = color(255, 255, 0); // Yellow for current
+        currentFillColor = color(255, 255, 0, 60);
+      } else { // pink
+        currentStrokeColor = color(255, 0, 255); // Magenta for current
+        currentFillColor = color(255, 0, 255, 60);
+      }
+      
+      // Draw current tube while drawing (show from first point) - OUTSIDE tubes loop
+      if (isDrawing && currentTube.length >= 1) {
+        console.log('Drawing currentTube with brushType:', brushType, 'length:', currentTube.length);
+        // Use else if chain - outline first
+        if (brushType === "outline" || brushType === "outline2") {
+          // For single point, draw a circle/sphere
+          if (currentTube.length === 1) {
+            stroke(currentStrokeColor);
+            strokeWeight(2);
+            noFill();
+            push();
+            translate(currentTube[0].x, currentTube[0].y, currentTube[0].z);
+            sphere(adjustedPixelSize * 0.8);
+            pop();
+          } else {
+            // Outline current stroke - parallel lines with multiple levels
+            stroke(currentStrokeColor);
+            strokeWeight(2);
+            noFill();
+            
+            // Draw multiple outline levels if enabled
+            let levelsToDraw = outlineLevels >= 1 ? outlineLevels : 1;
+            
+            for (let level = 1; level <= levelsToDraw; level++) {
+              let outlineOffset = adjustedPixelSize * 1.5 + ((level - 1) * outlineSpacing);
+              
+              let leftOutline = [];
+              let rightOutline = [];
+              
+              for (let i = 0; i < currentTube.length; i++) {
+                let p = currentTube[i];
+                let offsetX = outlineOffset;
+                let offsetY = 0;
+                
+                let dx = 0, dy = 0;
+                
+                if (i < currentTube.length - 1) {
+                  let next = currentTube[i + 1];
+                  dx += next.x - p.x;
+                  dy += next.y - p.y;
+                }
+                if (i > 0) {
+                  let prev = currentTube[i - 1];
+                  dx += p.x - prev.x;
+                  dy += p.y - prev.y;
+                }
+                
+                let len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0.01) {
+                  offsetX = -dy / len * outlineOffset;
+                  offsetY = dx / len * outlineOffset;
+                }
+                
+                leftOutline.push({x: p.x - offsetX, y: p.y - offsetY, z: p.z});
+                rightOutline.push({x: p.x + offsetX, y: p.y + offsetY, z: p.z});
+              }
+              
+              // Draw both outlines
+              beginShape();
+              for (let p of leftOutline) {
+                vertex(p.x, p.y, p.z);
+              }
+              endShape();
+              
+              beginShape();
+              for (let p of rightOutline) {
+                vertex(p.x, p.y, p.z);
+              }
+              endShape();
+              
+              // Draw end caps
+              if (leftOutline.length > 0 && rightOutline.length > 0) {
+                beginShape();
+                vertex(leftOutline[0].x, leftOutline[0].y, leftOutline[0].z);
+                vertex(rightOutline[0].x, rightOutline[0].y, rightOutline[0].z);
+                endShape();
+                
+                let lastIdx = leftOutline.length - 1;
+                beginShape();
+                vertex(leftOutline[lastIdx].x, leftOutline[lastIdx].y, leftOutline[lastIdx].z);
+                vertex(rightOutline[lastIdx].x, rightOutline[lastIdx].y, rightOutline[lastIdx].z);
+                endShape();
+              }
+            }
+          }
+        } else if (brushType === "simple") {
+          noStroke();
+          fill(currentStrokeColor);
+          
+          for (let i = 0; i < currentTube.length; i++) {
+            let pos = currentTube[i];
+            push();
+            translate(pos.x, pos.y, pos.z);
+            box(adjustedPixelSize);
+            pop();
+          }
+        } else if (brushType === "smooth") {
+          // Smooth mode: draw as spheres with wave animation
+          for (let i = 0; i < currentTube.length; i++) {
+            let pos = currentTube[i];
+            
+            // Calculate wave size (same as main canvas)
+            let size = adjustedPixelSize;
+            if (waveAnimationEnabled) {
+              let wavePhase = i * 0.3 - frameCount * 0.1;
+              let waveAmplitude = map(waveAmpAndBlurRadius, 5, 60, 0.1, 0.4);
+              let waveFactor = 1 + sin(wavePhase) * waveAmplitude;
+              size = adjustedPixelSize * waveFactor;
+            }
+            
+            noStroke();
+            fill(currentStrokeColor);
+            push();
+            translate(pos.x, pos.y, pos.z);
+            sphere(size * 0.5); // Use sphere with radius = size/2
+            pop();
+          }
+        } else if (brushType === "pixel") {
+          for (let i = 0; i < currentTube.length; i++) {
+            let pos = currentTube[i];
+            push();
+            translate(pos.x, pos.y, pos.z);
+            
+            stroke(currentStrokeColor);
+            strokeWeight(2);
+            fill(currentFillColor);
+            
+            box(adjustedPixelSize);
+            pop();
+          }
+        } else if (brushType === "surface") {
+          // Surface brush - draw as boxes
+          noStroke();
+          fill(currentStrokeColor);
+          for (let pos of currentTube) {
+            push();
+            translate(pos.x, pos.y, pos.z);
+            box(adjustedPixelSize);
+            pop();
+          }
+        } else {
+          // Fallback for unknown brush types (draw as simple)
+          noStroke();
+          fill(currentStrokeColor);
+          for (let pos of currentTube) {
+            push();
+            translate(pos.x, pos.y, pos.z);
+            box(adjustedPixelSize);
+            pop();
+          }
+        }
+      }
+      
+      if (tubes.length > 0) {
+        // Use actual pixel size (already scaled by scene scale)
+        let adjustedPixelSize = basePixelSize;
+        
+        // Define colors based on style
+        let strokeColor, fillColor;
+        
+        if (previewStyle === 'white') {
+          strokeColor = color(0, 0, 0); // Black edges
+          fillColor = color(0, 0, 0, 60); // Transparent black
+        } else if (previewStyle === 'black') {
+          strokeColor = color(255, 255, 255); // White edges
+          fillColor = color(255, 255, 255, 60); // Transparent white
+        } else { // pink
+          strokeColor = color(255, 0, 255); // Magenta edges
+          fillColor = color(255, 0, 255, 60); // Transparent magenta
+        }
+        
+        for (let i = 0; i < tubes.length; i++) {
+          let tube = tubes[i];
+          
+          // Check if this tube has ends meet extensions
+          let hasExtensions = makeEndsMeet && endsMeetProgress[i];
+          
+          // Use else if chain to ensure only one mode is active
+          if (brushType === "outline" || brushType === "outline2") {
+            // Outline mode - draw parallel lines with multiple levels like on main canvas
+            if (tube.length < 2) continue;
+            
+            stroke(strokeColor);
+            strokeWeight(2);
+            noFill();
+            
+            // Draw multiple outline levels if enabled
+            let levelsToDraw = outlineLevels >= 1 ? outlineLevels : 1;
+            
+            for (let level = 1; level <= levelsToDraw; level++) {
+              let outlineOffset = adjustedPixelSize * 1.5 + ((level - 1) * outlineSpacing);
+              
+              let leftOutline = [];
+              let rightOutline = [];
+              
+              for (let i = 0; i < tube.length; i++) {
+                let p = tube[i];
+                let offsetX = outlineOffset;
+                let offsetY = 0;
+                
+                let dx = 0, dy = 0;
+                
+                if (i < tube.length - 1) {
+                  let next = tube[i + 1];
+                  dx += next.x - p.x;
+                  dy += next.y - p.y;
+                }
+                if (i > 0) {
+                  let prev = tube[i - 1];
+                  dx += p.x - prev.x;
+                  dy += p.y - prev.y;
+                }
+                
+                let len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0.01) {
+                  offsetX = -dy / len * outlineOffset;
+                  offsetY = dx / len * outlineOffset;
+                }
+                
+                leftOutline.push({x: p.x - offsetX, y: p.y - offsetY, z: p.z});
+                rightOutline.push({x: p.x + offsetX, y: p.y + offsetY, z: p.z});
+              }
+              
+              // Draw left outline
+              beginShape();
+              for (let p of leftOutline) {
+                vertex(p.x, p.y, p.z);
+              }
+              endShape();
+              
+              // Draw right outline
+              beginShape();
+              for (let p of rightOutline) {
+                vertex(p.x, p.y, p.z);
+              }
+              endShape();
+              
+              // Draw end caps
+              if (leftOutline.length > 0 && rightOutline.length > 0) {
+                beginShape();
+                vertex(leftOutline[0].x, leftOutline[0].y, leftOutline[0].z);
+                vertex(rightOutline[0].x, rightOutline[0].y, rightOutline[0].z);
+                endShape();
+                
+                let lastIdx = leftOutline.length - 1;
+                beginShape();
+                vertex(leftOutline[lastIdx].x, leftOutline[lastIdx].y, leftOutline[lastIdx].z);
+                vertex(rightOutline[lastIdx].x, rightOutline[lastIdx].y, rightOutline[lastIdx].z);
+                endShape();
+              }
+            }
+          } else if (brushType === "simple") {
+            // Simple mode: draw solid boxes without transparency
+            noStroke();
+            fill(strokeColor);
+            
+            for (let i = 0; i < tube.length; i++) {
+              let pos = tube[i];
+              push();
+              translate(pos.x, pos.y, pos.z);
+              box(adjustedPixelSize);
+              pop();
+            }
+          } else if (brushType === "smooth") {
+            // Smooth mode: draw as spheres with wave animation
+            for (let i = 0; i < tube.length; i++) {
+              let pos = tube[i];
+              
+              // Calculate wave size (same as main canvas)
+              let size = adjustedPixelSize;
+              if (waveAnimationEnabled) {
+                let wavePhase = i * 0.3 - frameCount * 0.1;
+                let waveAmplitude = map(waveAmpAndBlurRadius, 5, 60, 0.1, 0.4);
+                let waveFactor = 1 + sin(wavePhase) * waveAmplitude;
+                size = adjustedPixelSize * waveFactor;
+              }
+              
+              noStroke();
+              fill(strokeColor);
+              push();
+              translate(pos.x, pos.y, pos.z);
+              sphere(size * 0.5); // Use sphere with radius = size/2
+              pop();
+            }
+          } else if (brushType === "pixel") {
+            // Pixel mode with wave effects
+            for (let i = 0; i < tube.length; i++) {
+              let pos = tube[i];
+              let wave = waveAnimationEnabled ? 
+                map(sin(i * 0.3 - frameCount * 0.1), -1, 1, adjustedPixelSize * 0.5, adjustedPixelSize + waveAmpAndBlurRadius) :
+                adjustedPixelSize + waveAmpAndBlurRadius * 0.5;
+              
+              push();
+              translate(pos.x, pos.y, pos.z);
+              
+              stroke(strokeColor);
+              strokeWeight(2);
+              fill(fillColor);
+              
+              box(wave);
+              pop();
+            }
+          } else if (brushType === "surface") {
+            // Surface mode: filled closed shape
+            if (tube.length < 3) continue;
+            
+            fill(fillColor);
+            noStroke();
+            
+            beginShape();
+            for (let p of tube) {
+              vertex(p.x, p.y, p.z);
+            }
+            endShape(CLOSE);
+            
+            // Outline
+            stroke(strokeColor);
+            strokeWeight(1);
+            noFill();
+            beginShape();
+            for (let p of tube) {
+              vertex(p.x, p.y, p.z);
+            }
+            endShape(CLOSE);
+          } else if (brushType === "outline2") {
+            // Outline 2 (Vector Ink): Full boolean union rendering
+            // Render all tubes with union just like main canvas
+            if (i === 0) {
+              // Only render once for all tubes combined
+              renderVectorInkPreview(tubes, strokeColor, adjustedPixelSize);
+            }
+            continue; // Skip individual tube rendering
+          }
+          
+          // Draw ends meet extensions if they exist
+          if (hasExtensions) {
+            let progress = endsMeetProgress[i];
+            
+            // Draw start extension
+            if (progress.startExtension && progress.startExtension.length > 1) {
+              if (brushType === "smooth") {
+                stroke(strokeColor);
+                strokeWeight(adjustedPixelSize);
+                noFill();
+                beginShape();
+                for (let pos of progress.startExtension) {
+                  vertex(pos.x, pos.y, pos.z);
+                }
+                endShape();
+              } else if (brushType === "pixel") {
+                for (let pos of progress.startExtension) {
+                  push();
+                  translate(pos.x, pos.y, pos.z);
+                  stroke(strokeColor);
+                  strokeWeight(2);
+                  fill(fillColor);
+                  box(adjustedPixelSize);
+                  pop();
+                }
+              } else if (brushType === "outline") {
+                stroke(strokeColor);
+                strokeWeight(2);
+                noFill();
+                beginShape();
+                for (let pos of progress.startExtension) {
+                  vertex(pos.x, pos.y, pos.z);
+                }
+                endShape();
+              }
+            }
+            
+            // Draw end extension
+            if (progress.endExtension && progress.endExtension.length > 1) {
+              if (brushType === "smooth") {
+                stroke(strokeColor);
+                strokeWeight(adjustedPixelSize);
+                noFill();
+                beginShape();
+                for (let pos of progress.endExtension) {
+                  vertex(pos.x, pos.y, pos.z);
+                }
+                endShape();
+              } else if (brushType === "pixel") {
+                for (let pos of progress.endExtension) {
+                  push();
+                  translate(pos.x, pos.y, pos.z);
+                  stroke(strokeColor);
+                  strokeWeight(2);
+                  fill(fillColor);
+                  box(adjustedPixelSize);
+                  pop();
+                }
+              } else if (brushType === "outline") {
+                stroke(strokeColor);
+                strokeWeight(2);
+                noFill();
+                beginShape();
+                for (let pos of progress.endExtension) {
+                  vertex(pos.x, pos.y, pos.z);
+                }
+                endShape();
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // ===== VECTOR INK PREVIEW FUNCTIONS =====
+    
+    function renderVectorInkPreview(allTubes, strokeColor, pixelSize) {
+      if (allTubes.length === 0) return;
+      
+      let allPolygonsWithZ = [];
+      
+      for (let tube of allTubes) {
+        if (tube.length < 2) continue;
+        
+        let strokePoly = createStrokePolygonWithZ(tube, pixelSize * 2);
+        if (strokePoly && strokePoly.polygon && strokePoly.polygon.length > 0) {
+          allPolygonsWithZ.push(strokePoly);
+        }
+      }
+      
+      if (allPolygonsWithZ.length === 0) return;
+      
+      // Merge all polygons
+      let merged2D = allPolygonsWithZ[0].polygon;
+      for (let i = 1; i < allPolygonsWithZ.length; i++) {
+        merged2D = unionPolygonsPreview(merged2D, allPolygonsWithZ[i].polygon);
+        if (!merged2D) {
+          merged2D = allPolygonsWithZ[i - 1].polygon;
+        }
+      }
+      
+      if (!merged2D || merged2D.length === 0) return;
+      
+      // Reconstruct Z values
+      let mergedWithZ = reconstructZValuesPreview(merged2D, allPolygonsWithZ);
+      
+      // Draw outline
+      stroke(strokeColor);
+      strokeWeight(2);
+      noFill();
+      
+      beginShape();
+      for (let pt of mergedWithZ) {
+        vertex(pt.X / 1000, pt.Y / 1000, pt.z);
+      }
+      endShape(CLOSE);
+    }
+    
+    function createStrokePolygonWithZ(points, width) {
+      if (points.length < 2) return null;
+      
+      let halfWidth = width / 2;
+      let leftSide = [];
+      let rightSide = [];
+      
+      for (let i = 0; i < points.length; i++) {
+        let p = points[i];
+        let tangent;
+        
+        if (i === 0) {
+          tangent = createVector(points[1].x - p.x, points[1].y - p.y, 0);
+        } else if (i === points.length - 1) {
+          tangent = createVector(p.x - points[i-1].x, p.y - points[i-1].y, 0);
+        } else {
+          tangent = createVector(points[i+1].x - points[i-1].x, points[i+1].y - points[i-1].y, 0);
+        }
+        
+        tangent.normalize();
+        let normal = createVector(-tangent.y, tangent.x, 0);
+        normal.normalize();
+        normal.mult(halfWidth);
+        
+        leftSide.push({
+          X: Math.round((p.x + normal.x) * 1000),
+          Y: Math.round((p.y + normal.y) * 1000),
+          z: p.z,
+          sourceX: p.x,
+          sourceY: p.y
+        });
+        
+        rightSide.push({
+          X: Math.round((p.x - normal.x) * 1000),
+          Y: Math.round((p.y - normal.y) * 1000),
+          z: p.z,
+          sourceX: p.x,
+          sourceY: p.y
+        });
+      }
+      
+      // Round caps
+      let capSegments = 8;
+      let startCap = [];
+      let endCap = [];
+      
+      let startCenter = points[0];
+      let startDir = createVector(points[1].x - startCenter.x, points[1].y - startCenter.y, 0);
+      startDir.normalize();
+      for (let i = 0; i <= capSegments; i++) {
+        let angle = PI + (i / capSegments) * PI;
+        let offset = createVector(
+          cos(angle) * (-startDir.y) - sin(angle) * startDir.x,
+          cos(angle) * startDir.x + sin(angle) * (-startDir.y),
+          0
+        );
+        offset.mult(halfWidth);
+        startCap.push({
+          X: Math.round((startCenter.x + offset.x) * 1000),
+          Y: Math.round((startCenter.y + offset.y) * 1000),
+          z: startCenter.z,
+          sourceX: startCenter.x,
+          sourceY: startCenter.y
+        });
+      }
+      
+      let endCenter = points[points.length - 1];
+      let endDir = createVector(endCenter.x - points[points.length - 2].x, endCenter.y - points[points.length - 2].y, 0);
+      endDir.normalize();
+      for (let i = 0; i <= capSegments; i++) {
+        let angle = (i / capSegments) * PI;
+        let offset = createVector(
+          cos(angle) * (-endDir.y) - sin(angle) * endDir.x,
+          cos(angle) * endDir.x + sin(angle) * (-endDir.y),
+          0
+        );
+        offset.mult(halfWidth);
+        endCap.push({
+          X: Math.round((endCenter.x + offset.x) * 1000),
+          Y: Math.round((endCenter.y + offset.y) * 1000),
+          z: endCenter.z,
+          sourceX: endCenter.x,
+          sourceY: endCenter.y
+        });
+      }
+      
+      let fullPolygon = [...leftSide, ...endCap, ...rightSide.reverse(), ...startCap];
+      
+      return {
+        polygon: fullPolygon,
+        pointsWithZ: fullPolygon
+      };
+    }
+    
+    function unionPolygonsPreview(poly1, poly2) {
+      if (!window.ClipperLib) return poly1;
+      
+      try {
+        let cpr = new ClipperLib.Clipper();
+        let solution = new ClipperLib.Paths();
+        
+        cpr.AddPath(poly1, ClipperLib.PolyType.ptSubject, true);
+        cpr.AddPath(poly2, ClipperLib.PolyType.ptClip, true);
+        
+        let success = cpr.Execute(ClipperLib.ClipType.ctUnion, solution,
+                                  ClipperLib.PolyFillType.pftNonZero,
+                                  ClipperLib.PolyFillType.pftNonZero);
+        
+        if (!success || solution.length === 0) return poly1;
+        
+        let largest = solution[0];
+        let maxArea = Math.abs(ClipperLib.Clipper.Area(largest));
+        
+        for (let i = 1; i < solution.length; i++) {
+          let area = Math.abs(ClipperLib.Clipper.Area(solution[i]));
+          if (area > maxArea) {
+            maxArea = area;
+            largest = solution[i];
+          }
+        }
+        
+        return largest;
+      } catch (e) {
+        console.error("Clipper union failed in preview:", e);
+        return poly1;
+      }
+    }
+    
+    function reconstructZValuesPreview(merged2D, originalPolygons) {
+      let result = [];
+      
+      for (let pt of merged2D) {
+        let x = pt.X / 1000;
+        let y = pt.Y / 1000;
+        
+        let nearestZ = 0;
+        let minDist = Infinity;
+        
+        for (let polyData of originalPolygons) {
+          for (let origPt of polyData.pointsWithZ) {
+            if (origPt.sourceX !== undefined && origPt.sourceY !== undefined) {
+              let dist = Math.sqrt(
+                Math.pow(x - origPt.sourceX, 2) + 
+                Math.pow(y - origPt.sourceY, 2)
+              );
+              
+              if (dist < minDist) {
+                minDist = dist;
+                nearestZ = origPt.z;
+              }
+            }
+          }
+        }
+        
+        result.push({
+          X: pt.X,
+          Y: pt.Y,
+          z: nearestZ
+        });
+      }
+      
+      return result;
+    }
+  </script>
+</body>
+</html>
